@@ -48,7 +48,7 @@ test('empty, invalid, oversized and overlong audio are rejected before transcrip
 test('ambiguous or multiple operations make no movement; provider errors are retryable',async()=>{
  let transcript='';let fail=false;const {server,url}=await serverFor(async()=>{if(fail)throw Object.assign(new Error('provider unavailable'),{status:503});return {text:transcript};});
  try{
-  for(const phrase of ['', 'Vendí algo', 'Vendí 900 y gasté 300']){transcript=phrase;const result=await (await post(url)).json();assert.equal(result.status,'clarify');}
+  for(const phrase of ['', 'Vendí algo', 'Vendí 900 y gasté 300']){transcript=phrase;const result=await (await post(url)).json();assert.equal(result.status,'clarify');if(phrase.includes(' y '))assert.match(result.text,/Envíalas por separado/);}
   assert.equal(multipleVoiceOperations('Vendí 900 y gasté 300'),true);
   assert.equal(await count('movements'),0);
   fail=true;const id=randomUUID();assert.equal((await post(url,wav(),id)).status,503);assert.equal(await count('messages'),3);

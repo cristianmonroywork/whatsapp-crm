@@ -5,7 +5,8 @@ export function messageFingerprint(text,media=null) {
   return createHash('sha256').update(media?.type==='audio'&&media.sha256 ? `audio:${media.sha256}` : JSON.stringify({text,media})).digest('hex');
 }
 function withTranscript(result,media) {
-  return {...result,text:media?.type==='audio'&&media.transcript ? `Escuché: ${media.transcript}\n${render(result)}` : render(result)};
+  const answer=media?.multiple_operations&&result.status==='clarify' ? 'Escuché varias operaciones. Envíalas por separado, una por nota de voz. No registré cambios.' : render(result);
+  return {...result,text:media?.type==='audio'&&media.transcript ? `Escuché: ${media.transcript}\n${answer}` : answer};
 }
 export async function handleMessage({store,interpreter,business,actor,channel,externalId,text,media=null,quotaConsumed=false}) {
   if(typeof text!=='string'||!text.trim()||text.length>4000||typeof externalId!=='string'||!externalId||externalId.length>200||!['web','whatsapp'].includes(channel)) {
