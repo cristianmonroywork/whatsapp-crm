@@ -214,6 +214,8 @@ Limitaciones: no hay edición de la transcripción antes de enviarla, guardado d
 
 `npm test` ejecuta PostgreSQL local real vía PGlite, no un ledger falso de objetos JS: ambas migraciones, reglas, SQL y RLS. Cubre ventas/gastos, consultas, correcciones, pagos, aislamiento, audio y, para lotes, tipos mezclados, varias ventas/deudas, fiado, abono inicial, cantidad × precio, fechas distintas, operación inválida o ambigua, rollback, idempotencia y auditoría individual. Las peticiones concurrentes se prueban sobre una instancia local; PGlite serializa su conexión, así que no sustituye una prueba de carga multiconexión en Supabase. El bloqueo `FOR UPDATE` por negocio implementa la exclusión en PostgreSQL servidor.
 
+Verificación de Sprint 4: **44/44 pruebas locales**; **8/8 ejemplos válidos y 4/4 ambiguos** con Gemini real; prueba integral en el proyecto Supabase aislado con venta de $2,600, gasto de $450 y deuda de $800, consulta diaria de $2,600, reintento sin duplicados y auditoría de cada movimiento. Una nota WAV sintética con dos operaciones también pasó por transcripción, interpretación y persistencia real. En la web desplegada se registró otro lote de venta y gasto y se consultó el total actualizado. Estas pruebas escribieron sólo en un negocio de prueba dedicado, que se conserva para inspección.
+
 Ver [docs/VALIDACION.md](docs/VALIDACION.md) y [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md). Un fallo de Gemini nunca cambia silenciosamente al intérprete demo.
 
 ## Referencias de implementación
