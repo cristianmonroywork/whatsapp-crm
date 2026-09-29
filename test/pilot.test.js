@@ -6,6 +6,7 @@ import {createLocalStore,DEMO_USER as actor,DEMO_BUSINESS as business} from '../
 import {handleMessage} from '../src/service.js';
 import {base} from '../src/interpret.js';
 import {createHandler} from '../api/index.js';
+import {wavPreview} from '../public/audio-preview.js';
 let store;
 before(async()=>{store=await createLocalStore();});
 after(async()=>{await store.db.close();});
@@ -104,4 +105,11 @@ test('expired session and technical failures return safe understandable errors',
   const res=await fetch(`${root}/api/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({businessId:business,id:randomUUID(),text:'Vendí $100'})});
   assert.equal(res.status,503);assert.match((await res.json()).error,/Reintenta/);
  });
+});
+
+test('recorded PCM preview is a playable-size WAV kept separate from upload',async()=>{
+ const preview=wavPreview([new Float32Array([0,0.5,-0.5,1,-1])],16000);
+ assert.equal(preview.type,'audio/wav');assert.equal(preview.size,54);
+ const bytes=Buffer.from(await preview.arrayBuffer());assert.equal(bytes.toString('ascii',0,4),'RIFF');assert.equal(bytes.toString('ascii',8,12),'WAVE');
+ assert.equal(bytes.readUInt32LE(24),16000);assert.equal(bytes.readUInt32LE(40),10);assert.equal(bytes.readInt16LE(44),0);assert.ok(bytes.readInt16LE(46)>16000);
 });
