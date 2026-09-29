@@ -5,7 +5,7 @@ import {createServer} from 'node:http';
 import {createLocalStore,DEMO_USER as actor,DEMO_BUSINESS as business} from '../scripts/local-store.js';
 import {createHandler} from '../api/index.js';
 import {base} from '../src/interpret.js';
-import {validateAudio,transcribeAudio,multipleVoiceOperations} from '../src/voice.js';
+import {validateAudio,transcribeAudio,multipleVoiceOperations,webmDurationSeconds} from '../src/voice.js';
 
 let store;
 before(async()=>{store=await createLocalStore();});
@@ -66,4 +66,10 @@ test('Gemini transcription adapter sends inline audio and no financial tools',as
  const bytes=wav();assert.equal((await validateAudio(bytes,'audio/wav')).duration_seconds,1);
  const result=await transcribeAudio(bytes,{mime:'audio/wav',key:'test',fetcher:async(url,options)=>{assert.match(url,/gemini-3\.5-flash-lite:generateContent$/);const body=JSON.parse(options.body);assert.equal(body.contents[0].parts[1].inlineData.mimeType,'audio/wav');assert.equal(body.contents[0].parts[1].inlineData.data,bytes.toString('base64'));assert.ok(!body.tools);return {ok:true,json:async()=>({candidates:[{finishReason:'STOP',content:{parts:[{text:'Gasté 350 pesos de gasolina'}]}}]})};}});
  assert.equal(result.text,'Gasté 350 pesos de gasolina');
+});
+test('WebM without declared duration is bounded using packet timestamps',()=>{
+ const header=Buffer.concat([Buffer.from([0x1a,0x45,0xdf,0xa3,0x87,0x42,0x82,0x84]),Buffer.from('webm')]);
+ const segment=Buffer.from([0x18,0x53,0x80,0x67,0x01,0xff,0xff,0xff,0xff,0xff,0xff,0xff]);
+ const cluster=Buffer.from([0x1f,0x43,0xb6,0x75,0x8a,0xe7,0x82,0x03,0xe8,0xa3,0x84,0x81,0x00,0x00,0x80]);
+ assert.equal(webmDurationSeconds(Buffer.concat([header,segment,cluster])),1.12);
 });
