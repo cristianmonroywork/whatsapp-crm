@@ -4,7 +4,7 @@ Esta carpeta contiene una referencia independiente de la aplicación actual. No 
 
 ## Dirección visual
 
-- Verde profundo para confianza cotidiana, crema cálido para calma y acentos durazno para cercanía.
+- Paleta aprobada: azul profundo `#30525C` para texto y acciones, turquesa `#09A1A1` para señales de interacción, azul `#5484A4` y azul claro `#ACC0D3` para apoyo visual, durazno `#F6C992` y rosa `#D396A6` para cercanía.
 - Titulares directos, formas suaves y ejemplos de operaciones que un comerciante reconocería.
 - En móvil, el chat ocupa el espacio principal; el selector del negocio permanece arriba y el campo para escribir o grabar queda abajo, visible junto al teclado.
 - La portada explica resultados y hábitos de uso, sin describir tecnología.

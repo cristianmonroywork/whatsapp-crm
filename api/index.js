@@ -24,8 +24,8 @@ function friendlyError(error,status) {
  if(status===409)return 'Esa cuenta o solicitud ya existe. Revisa tus datos.';
  if(status===413)return 'El archivo o mensaje es demasiado grande.';
  if(status===415)return 'Ese formato de audio no es compatible.';
- if(status===422)return 'No pude entender o validar ese audio. Prueba con una nota más clara.';
- if(status===429)return 'Llegaste al límite temporal del piloto. Intenta más tarde.';
+ if(status===422)return 'No pude entender o validar ese audio. Inténtalo con una nota más clara.';
+ if(status===429)return 'Llegaste al límite de mensajes por ahora. Intenta más tarde.';
  if(error?.name==='TimeoutError'||error?.name==='AbortError')return 'La conexión tardó demasiado. Reintenta con el mismo mensaje.';
  if(status>=500)return 'El servicio está ocupado. Reintenta con el mismo mensaje; no se duplicará.';
  return 'No pude completar la solicitud. Revisa los datos e intenta de nuevo.';
@@ -58,7 +58,7 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
     if(origin.host!==req.headers.host) return reply(res,403,{error:'Origen inválido.'});
    }
    if(path==='/api/signup' && req.method==='POST') {
-    if(demoUser||env.PILOT_SIGNUP_ENABLED!=='true'||String(env.PILOT_INVITE_CODE||'').length<16) return reply(res,404,{error:'El alta de pilotos no está disponible.'});
+    if(demoUser||env.PILOT_SIGNUP_ENABLED!=='true'||String(env.PILOT_INVITE_CODE||'').length<16) return reply(res,404,{error:'El registro de nuevas cuentas no está disponible.'});
     const {email,password,inviteCode}=JSON.parse((await readBody(req,8192)).toString());
     if(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)||email.length>254||typeof password!=='string'||password.length<10||password.length>128||!same(inviteCode,env.PILOT_INVITE_CODE)) return reply(res,400,{error:'Revisa el correo, la contraseña y el código de invitación.'});
     const data=await store.auth('signup',{body:{email:email.trim(),password}});
@@ -99,8 +99,8 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
    if(path==='/api/admin/deactivate'&&req.method==='POST') {
     if(!await store.operator(actor)) return reply(res,403,{error:'No tienes acceso al panel.'});
     const input=JSON.parse((await readBody(req,8192)).toString());
-    if(!uuid.test(input.businessId||'')||typeof input.name!=='string'||input.phrase!=='DESACTIVAR PILOTO')return reply(res,400,{error:'La confirmación no coincide.'});
-    return reply(res,200,await store.deactivatePilot(actor,input.businessId,input.name,input.phrase));
+    if(!uuid.test(input.businessId||'')||typeof input.name!=='string'||input.phrase!=='DESACTIVAR NEGOCIO')return reply(res,400,{error:'La confirmación no coincide.'});
+    return reply(res,200,await store.deactivatePilot(actor,input.businessId,input.name,'DESACTIVAR PILOTO'));
    }
    if(path==='/api/messages'&&req.method==='POST') {
     const {businessId,id,text}=JSON.parse((await readBody(req,16384)).toString());
@@ -127,7 +127,7 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
       await touch(store,actor,businessId);
       return reply(res,200,{...result,transcript});
     }
-    if(!await store.quota(actor,businessId,{perMinute:limit(env.PILOT_MESSAGES_PER_MINUTE,30,1000),perDay:limit(env.PILOT_MESSAGES_PER_DAY,250,10000)})) return reply(res,429,{error:'Llegaste al límite de mensajes del piloto. Intenta más tarde.'});
+    if(!await store.quota(actor,businessId,{perMinute:limit(env.PILOT_MESSAGES_PER_MINUTE,30,1000),perDay:limit(env.PILOT_MESSAGES_PER_DAY,250,10000)})) return reply(res,429,{error:'Llegaste al límite de mensajes por ahora. Intenta más tarde.'});
     const transcription=await transcriber(bytes,{mime:details.mime,key:env.GEMINI_API_KEY,model:env.GEMINI_TRANSCRIBE_MODEL||env.GEMINI_MODEL||'gemini-3.5-flash-lite',fetcher});
     const transcript=typeof transcription?.text==='string'?transcription.text.trim():'';
     if(transcript.length>4000) return reply(res,422,{error:'La transcripción es demasiado larga.'});

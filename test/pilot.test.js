@@ -63,6 +63,16 @@ test('operator sees only pilot businesses and can deactivate with strong confirm
  const events=(await store.db.query("select count(*)::integer as n from pilot_events where business_id=$1 and event_type='pilot_deactivated'",[business])).rows;assert.equal(events[0].n,1);
 });
 
+test('operator deactivation uses neutral wording while preserving the existing audit check',async()=>{
+ await store.db.query('update businesses set is_pilot=true where id=$1',[business]);
+ await store.db.query('insert into pilot_operators(user_id) values($1)',[actor]);
+ await server(createHandler({store,demoUser:actor,env:{}}),async root=>{
+  const request=phrase=>fetch(`${root}/api/admin/deactivate`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({businessId:business,name:'Mi negocio de prueba',phrase})});
+  assert.equal((await request('DESACTIVAR PILOTO')).status,400);
+  const response=await request('DESACTIVAR NEGOCIO');assert.equal(response.status,200);assert.equal((await response.json()).is_active,false);
+ });
+});
+
 test('empty period has a useful answer without technical text',async()=>{
  const result=await send('¿Cuánto vendí esta semana?',base('totals',{period:'week',metric:'sales'}));
  assert.match(result.text,/Aún no tienes ventas registradas esta semana/);

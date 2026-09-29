@@ -7,25 +7,33 @@ async function api(path,body) {
 }
 function bubble(text,type='assistant') {const el=document.createElement('div');el.className=`bubble ${type}`;el.textContent=text;$('messages').append(el);$('messages').scrollTop=$('messages').scrollHeight;}
 function timezone() {$('timezone').textContent=businesses.find(x=>x.id===$('business').value)?.timezone || '';}
+function account(mode='login',message='Entra a tu cuenta para continuar.') {
+ $('landing').hidden=true;$('workspace').hidden=true;$('account').hidden=false;$('onboarding').hidden=true;
+ $('login').hidden=mode!=='login';$('signup').hidden=mode!=='signup';$('notice').textContent=message;
+ window.scrollTo({top:0,behavior:'auto'});
+}
+function home(){if(!$('workspace').hidden)return;$('landing').hidden=false;$('account').hidden=true;window.scrollTo({top:0,behavior:'auto'});}
+document.querySelectorAll('[data-auth]').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();account(link.dataset.auth,link.dataset.auth==='signup'?'Crea tu cuenta con el código de invitación que recibiste.':'Entra a tu cuenta para continuar.');}));
+$('back-home').addEventListener('click',home);
 async function session() {
  try {
   const data=await api('session');businesses=data.businesses;$('business').replaceChildren();
   businesses.forEach(b=>{const o=document.createElement('option');o.value=b.id;o.textContent=b.name;$('business').append(o);});if(pending&&businesses.some(b=>b.id===pending.businessId))$('business').value=pending.businessId;timezone();
-  $('login').hidden=true;$('signup').hidden=true;$('onboarding').hidden=!!businesses.length;$('workspace').hidden=!businesses.length;$('admin-link').hidden=!data.operator;
-  $('notice').textContent=!businesses.length?'Un paso más: crea tu negocio piloto.':data.mode==='demo'?'DEMO LOCAL · Los registros se guardan en este equipo. El intérprete de texto sólo reconoce los ejemplos. La voz necesita una clave de Gemini en el archivo de entorno local; Supabase y WhatsApp no están conectados.':'PILOTO · Registros guardados en Supabase. Puedes escribir o enviar una nota de voz.';
-  $('connection').textContent=data.mode==='demo'?'Prueba local · Texto y voz':'Conectado · Texto y voz';
- } catch(e){$('workspace').hidden=true;$('onboarding').hidden=true;$('signup').hidden=true;$('login').hidden=false;$('notice').textContent=e.status===401?'Entra o crea tu cuenta para continuar.':e.message;}
+  $('landing').hidden=true;$('login').hidden=true;$('signup').hidden=true;$('account').hidden=!!businesses.length;$('onboarding').hidden=!!businesses.length;$('workspace').hidden=!businesses.length;$('admin-link').hidden=!data.operator;
+  $('notice').textContent=!businesses.length?'Agrega tu negocio para empezar.':'';window.scrollTo({top:0,behavior:'auto'});
+  $('connection').textContent='Aquí puedes contarme lo que pasó en tu negocio';
+ } catch(e){$('workspace').hidden=true;$('onboarding').hidden=true;$('account').hidden=true;$('landing').hidden=false;if(e.status!==401)account('login',e.message);}
 }
 $('login').addEventListener('submit',async e=>{e.preventDefault();const button=e.currentTarget.querySelector('button');button.disabled=true;try{await api('login',Object.fromEntries(new FormData(e.currentTarget)));$('login').reset();await session();}catch(e){$('notice').textContent=e.message;}finally{button.disabled=false;}});
-$('show-signup').addEventListener('click',()=>{$('login').hidden=true;$('signup').hidden=false;$('notice').textContent='Crea tu cuenta con el código que te dio el operador del piloto.';});
-$('show-login').addEventListener('click',()=>{$('signup').hidden=true;$('login').hidden=false;$('notice').textContent='Entra a tu negocio.';});
+$('show-signup').addEventListener('click',()=>account('signup','Crea tu cuenta con el código de invitación que recibiste.'));
+$('show-login').addEventListener('click',()=>account('login','Entra a tu cuenta.'));
 $('signup').addEventListener('submit',async e=>{e.preventDefault();const button=e.currentTarget.querySelector('button');button.disabled=true;try{const result=await api('signup',Object.fromEntries(new FormData(e.currentTarget)));$('signup').reset();if(result.checkEmail){$('signup').hidden=true;$('login').hidden=false;$('notice').textContent='Revisa tu correo para confirmar la cuenta y luego inicia sesión.';}else await session();}catch(error){$('notice').textContent=error.message;}finally{button.disabled=false;}});
 $('create-business').addEventListener('submit',async e=>{e.preventDefault();const button=e.currentTarget.querySelector('button');button.disabled=true;try{await api('businesses',Object.fromEntries(new FormData(e.currentTarget)));await session();bubble('Listo. Puedes registrar tu primera venta, gasto o cuenta por cobrar; también puedes grabar una nota de voz.');}catch(error){$('notice').textContent=error.message;}finally{button.disabled=false;}});
 async function send() {
- if(!pending||busy)return;busy=true;$('send').disabled=true;$('business').disabled=true;$('text').disabled=true;$('retry').hidden=true;
+ if(!pending||busy)return;const wasAudio=!!pending.audio;busy=true;$('send').disabled=true;$('business').disabled=true;$('text').disabled=true;$('retry').hidden=true;
  try {let r;if(pending.audio){const res=await fetch('/api/audio',{method:'POST',headers:{'Content-Type':pending.audio.type,'X-CC-Business-Id':pending.businessId,'X-CC-Message-Id':pending.id},body:pending.audio});r=await res.json();if(!res.ok)throw Object.assign(new Error(r.error||'Error de conexión'),{status:res.status});}else r=await api('messages',pending);bubble(r.text);pending=null;clearAudio();}
- catch(e){bubble(e.message,'error');if(e.status===400||e.status===403||e.status===409)pending=null;else $('retry').hidden=false;if(e.status===401){$('login').hidden=false;$('notice').textContent='Tu sesión caducó. Entra de nuevo y pulsa Reintentar; conservaré el identificador del mensaje.';}}
- finally{busy=false;$('send').disabled=!!pending;$('business').disabled=!!pending;$('text').disabled=!!pending;if(!pending)$('text').focus();}
+ catch(e){bubble(e.message,'error');if(e.status===400||e.status===403||e.status===409)pending=null;else $('retry').hidden=false;if(e.status===401)account('login','Tu sesión caducó. Entra de nuevo; conservaré el mensaje para que puedas reintentarlo.');}
+ finally{busy=false;$('send').disabled=!!pending;$('business').disabled=!!pending;$('text').disabled=!!pending;if(!pending&&!wasAudio)$('text').focus();}
 }
 $('compose').addEventListener('submit',async e=>{e.preventDefault();if(pending||busy)return;const text=$('text').value.trim();if(!text)return;pending={id:crypto.randomUUID(),businessId:$('business').value,text};bubble(text,'user');$('text').value='';await send();});
 $('retry').addEventListener('click',send);

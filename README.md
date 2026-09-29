@@ -1,8 +1,16 @@
-# Cuenta Clara — MVP Sprint 5.5
+# Cuenta Clara — MVP Sprint 5.6
 
 Asistente de cuentas para micronegocios en México. Canal previsto: WhatsApp; incluye un chat pequeño para probar el mismo servicio. Proyecto nuevo e independiente, sin vínculo a recursos ni proyectos de otros clientes.
 
-**Estado:** texto y notas de voz usan el mismo servicio financiero; permiten registrar lotes y consultar cifras reales del negocio en lenguaje natural. Sprint 5.5 añade alta por invitación, métricas y operación de 3–5 pilotos. La integración Meta sigue pendiente.
+**Estado:** texto y notas de voz usan el mismo servicio financiero; permiten registrar lotes y consultar cifras reales del negocio en lenguaje natural. El alta por invitación y las métricas internas siguen vigentes. Sprint 5.6 renueva la presentación comercial y la experiencia móvil sin modificar la lógica financiera. La integración Meta sigue pendiente.
+
+## Presentación comercial (Sprint 5.6)
+
+La portada explica cómo registrar ventas, gastos y cuentas por cobrar por texto o voz. La cuenta sigue requiriendo código de invitación y la portada lo indica en preguntas frecuentes. Al entrar, el usuario ve el selector del negocio, ejemplos breves, conversación y un botón principal para grabar. En móvil, el historial tiene scroll propio y el campo de escritura se mantiene al fondo mientras cambia el alto visible del navegador. La vista previa de voz y la subida de archivos siguen usando el mismo flujo anterior.
+
+La paleta aprobada es `#F6C992`, `#30525C`, `#ACC0D3`, `#D396A6`, `#09A1A1` y `#5484A4`. Los archivos de referencia revisados se conservan en `design/sprint-5.6/`. La interfaz para clientes evita lenguaje de operación interna; las columnas y banderas `is_pilot`, eventos, RLS y límites permanecen para administración. El panel sigue protegido por membresía de operador. Su confirmación visible dice `DESACTIVAR NEGOCIO` y el servidor traduce esa frase al valor que exige la función SQL existente, sin migración de datos.
+
+`manifest.webmanifest` y los iconos PNG de 192 y 512 px permiten que navegadores compatibles ofrezcan instalar Cuenta Clara. El servicio requiere conexión; no se almacenan respuestas financieras fuera de línea. Para comprobar la experiencia en dispositivos: abrir la URL HTTPS en Safari de iPhone y Chrome de Android, añadirla a la pantalla de inicio, iniciar sesión, grabar/escuchar/cancelar/enviar una nota, abrir el teclado y revisar que el historial y el campo de entrada sigan accesibles. Repetir en escritorio con ancho amplio y estrecho. La presencia de una opción de instalación depende del navegador y dispositivo; no se ofrece un botón propio de instalación.
 
 ## Probar ahora
 
@@ -68,7 +76,7 @@ Vercel publica archivos estáticos y una función Node. `NODEJS_HELPERS=0` prese
 
 ## Alta y operación del piloto (Sprint 5.5)
 
-El operador comparte la URL de la PWA y un código de invitación con 3–5 vendedores. Cada vendedor pulsa **Crear cuenta piloto**, usa su correo y una contraseña de al menos 10 caracteres, confirma su correo si Supabase lo solicita, inicia sesión y crea su negocio. Puede poner un nombre comercial o aceptar «Mi negocio» y escoger una zona horaria IANA de México. La API obtiene el usuario desde la sesión de Supabase Auth, crea perfil, negocio `is_pilot=true`, membresía `owner` y eventos iniciales en una sola transacción SQL. No se necesita SQL por vendedor. Un usuario no puede crear dos negocios piloto activos con este flujo. Una cuenta comercial futura no tendrá `is_pilot`; las métricas y la limpieza del piloto se filtran por ese indicador.
+El operador comparte la URL de la PWA y un código de invitación con 3–5 vendedores. Cada vendedor pulsa **Crear mi cuenta**, usa su correo y una contraseña de al menos 10 caracteres, confirma su correo si Supabase lo solicita, inicia sesión y crea su negocio. Puede poner un nombre comercial o aceptar «Mi negocio» y escoger una zona horaria IANA de México. La API obtiene el usuario desde la sesión de Supabase Auth, crea perfil, negocio `is_pilot=true`, membresía `owner` y eventos iniciales en una sola transacción SQL. No se necesita SQL por vendedor. Un usuario no puede crear dos negocios piloto activos con este flujo. Una cuenta comercial futura no tendrá `is_pilot`; las métricas y la limpieza del piloto se filtran por ese indicador.
 
 Para habilitar altas en el proyecto aislado: aplica `004_pilot.sql`, configura `PILOT_SIGNUP_ENABLED=true` y un `PILOT_INVITE_CODE` largo y aleatorio **sólo** en variables seguras de Vercel y vuelve a desplegar. Configura en Supabase Auth la URL del deployment piloto para confirmación de correo. El código de invitación no se guarda en el navegador ni en Supabase. Las sesiones usan cookie HttpOnly, SameSite=Strict y Secure en Vercel. Todas las acciones financieras vuelven a verificar la membresía en servidor y SQL; `business_id` del navegador por sí solo no autoriza nada.
 
