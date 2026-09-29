@@ -8,6 +8,8 @@ for(const directory of ['src','api','public','scripts','test']) {
 }
 const config=JSON.parse(await readFile('vercel.json','utf8'));
 if(config.env.NODEJS_HELPERS!=='0') throw new Error('Webhook requires raw body');
+const csp=config.headers.flatMap(item=>item.headers).find(item=>item.key.toLowerCase()==='content-security-policy')?.value||'';
+if(!/(?:^|;)\s*media-src\s+[^;]*\bblob:/.test(csp)) throw new Error('Recorded-audio preview needs blob: in media-src');
 for(const file of ['public/app.js','public/index.html','public/style.css']) {
  const source=await readFile(file,'utf8');
  if(/SUPABASE_SERVICE_ROLE_KEY|GEMINI_API_KEY|WHATSAPP_ACCESS_TOKEN/.test(source)) throw new Error(`Server key in ${file}`);
