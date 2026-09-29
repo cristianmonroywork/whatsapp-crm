@@ -20,7 +20,7 @@ async function query(sql,args=[]) {return (await store.db.query(sql,args)).rows;
 
 test('Sprint 1: Spanish text → interpretation → PostgreSQL → daily sales $900',async()=>{
  const r=await send('Vendí 3 playeras en $900');assert.equal(r.status,'recorded');assert.equal(r.amount_cents,90000);
- const total=await send('¿Cuánto vendí hoy?');assert.equal(total.sales_cents,90000);assert.match(total.text,/Ventas: \$900\.00 MXN/);
+ const total=await send('¿Cuánto vendí hoy?');assert.equal(total.sales_cents,90000);assert.match(total.text,/Vendiste \$900\.00/);
  assert.equal((await query('select count(*) as n from messages'))[0].n,2);
 });
 test('expenses, daily totals and unit-price multiplication remain deterministic',async()=>{

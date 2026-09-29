@@ -1,0 +1,27 @@
+// Opt-in Sprint 5 smoke. Writes only to a new business in the confirmed Cuenta Clara project.
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {SupabaseStore} from '../src/store.js';
+import {handleMessage} from '../src/service.js';
+import {interpret} from '../src/interpret.js';
+const env=process.env,ref='vixbjjjeewcjawwemvnx';
+if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`)throw Error('Cuenta Clara Supabase target not confirmed');
+if(!env.TEST_USER_ID||!env.GEMINI_API_KEY)throw Error('Smoke configuration incomplete');
+const store=new SupabaseStore(env),actor=env.TEST_USER_ID,business=randomUUID();
+await store.request('profiles?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=minimal'},body:JSON.stringify({id:actor,display_name:'Piloto Sprint 5'})});
+await store.request('businesses',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({id:business,name:`Smoke Sprint 5 ${new Date().toISOString()}`,timezone:'America/Mexico_City'})});
+await store.request('memberships',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({business_id:business,user_id:actor})});
+const send=(text,id=randomUUID())=>handleMessage({store,interpreter:interpret,actor,business,channel:'web',externalId:id,text});
+const entry=await send('Vendí 3 playeras en $900, gasté $200 de gasolina y Luis me debe $400.');
+assert.equal(entry.status,'batch_recorded');assert.deepEqual(entry.operations.map(x=>[x.kind,Number(x.amount_cents)]),[['sale',90000],['expense',20000],['receivable',40000]]);
+const id=randomUUID(),today=await send('¿Cuánto vendí hoy?',id);assert.equal(today.status,'totals');assert.equal(Number(today.sales_cents),90000);
+assert.equal((await send('¿Cuánto vendí hoy?',id)).duplicate,true);
+const summary=await send('¿Cómo me fue esta semana?');assert.equal(summary.status,'summary');assert.equal(Number(summary.sales_cents),90000);assert.equal(Number(summary.expenses_cents),20000);assert.equal(Number(summary.balance_cents),40000);
+const debtors=await send('¿Quién me debe?');assert.equal(debtors.status,'debtors');assert.deepEqual(debtors.debtors.map(x=>[x.contact,Number(x.balance_cents)]),[['Luis',40000]]);
+const comparison=await send('¿Vendí más que la semana pasada?');assert.equal(Number(comparison.previous_sales_cents),0);assert.match(comparison.text,/no hay porcentaje comparable/);
+const rows=await store.request(`messages?business_id=eq.${business}&select=id,external_id,response`);
+const movements=await store.request(`movements?business_id=eq.${business}&select=id,source_message_id`);
+const audits=await store.request(`movement_audit?business_id=eq.${business}&select=movement_id,message_id`);
+assert.equal(rows.filter(x=>x.external_id===id).length,1);assert.equal(movements.length,3);assert.equal(audits.length,3);
+assert.ok(movements.every(x=>audits.some(a=>a.movement_id===x.id&&a.message_id===x.source_message_id)));
+console.log(JSON.stringify({passed:true,project:ref,business_id:business,sales_today_cents:Number(today.sales_cents),expenses_week_cents:Number(summary.expenses_cents),receivable_cents:Number(summary.balance_cents),movements:movements.length,audits:audits.length,messages:rows.length},null,2));

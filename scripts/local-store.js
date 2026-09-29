@@ -18,6 +18,8 @@ export async function createLocalStore(path) {
  }
  const batch=await db.query("select to_regprocedure('public.process_batch(uuid,uuid,text,text,text,text,jsonb,jsonb)') as name");
  if(!batch.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/002_batches.sql',import.meta.url),'utf8'));
+ const queries=await db.query("select to_regprocedure('public.process_financial_query(uuid,uuid,text,text,text,text,jsonb,jsonb)') as name");
+ if(!queries.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/003_queries.sql',import.meta.url),'utf8'));
  const store={
   db,
   async seed(user=DEMO_USER,business=DEMO_BUSINESS,name='Mi negocio de prueba',timezone='America/Mexico_City') {
@@ -31,6 +33,7 @@ export async function createLocalStore(path) {
   async receipt(business,channel,id) {return (await db.query('select id,actor_id,fingerprint,response,media from messages where business_id=$1 and channel=$2 and external_id=$3',[business,channel,id])).rows[0];},
   async process(a) {return (await db.query('select process_command($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_command),JSON.stringify(a.p_media)])).rows[0].result;},
   async batch(a) {return (await db.query('select process_batch($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_commands),JSON.stringify(a.p_media)])).rows[0].result;},
+  async query(a) {return (await db.query('select process_financial_query($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_command),JSON.stringify(a.p_media)])).rows[0].result;},
   async quota(actor) {return (await db.query('select consume_quota($1) as allowed',[actor])).rows[0].allowed;},
   async binding(phone,sender) {return (await db.query("select business_id,user_id from channel_bindings where channel='whatsapp' and phone_number_id=$1 and sender_id=$2",[phone,sender])).rows[0];},
   async enqueue(id,binding,body) {await db.query('insert into outbox(message_id,business_id,recipient,phone_number_id,body) values($1,$2,$3,$4,$5) on conflict do nothing',[id,binding.business_id,binding.sender,binding.phone,body]);},

@@ -1,8 +1,8 @@
-# Cuenta Clara — MVP Sprint 4
+# Cuenta Clara — MVP Sprint 5
 
 Asistente de cuentas para micronegocios en México. Canal previsto: WhatsApp; incluye un chat pequeño para probar el mismo servicio. Proyecto nuevo e independiente, sin vínculo a recursos ni proyectos de otros clientes.
 
-**Estado:** texto y notas de voz usan el mismo servicio financiero; Sprint 4 permite registrar varias operaciones de un mensaje como un lote. La integración Meta sigue pendiente y fuera de este sprint.
+**Estado:** texto y notas de voz usan el mismo servicio financiero; permiten registrar lotes y consultar cifras reales del negocio en lenguaje natural. La integración Meta sigue pendiente y fuera de este sprint.
 
 ## Probar ahora
 
@@ -20,7 +20,7 @@ Abre http://127.0.0.1:3000. Sin archivo de entorno arranca una **demo local expl
 Prueba, en este orden:
 
 1. `Vendí 3 playeras en $900`
-2. `¿Cuánto vendí hoy?` → Ventas: $900.00 MXN si el negocio estaba vacío.
+2. `¿Cuánto vendí hoy?` → $900.00 si el negocio estaba vacío.
 3. `Gasté $180 de gasolina`
 4. `Corrige el último a $150` → solicita confirmación del gasto.
 5. Copia `CONFIRMAR <código>` de la respuesta → gasto de $150.
@@ -28,6 +28,8 @@ Prueba, en este orden:
 7. `Pedro me debe $600`
 8. `Pedro ya me pagó $300`
 9. `¿Cuánto me deben?` → $300.00 MXN.
+10. `¿Quién me debe?` → Pedro $300.00.
+11. `¿Cómo va mi negocio?` → resumen breve de hoy.
 
 La demo conserva lo registrado: enviar de nuevo la misma venta intencionalmente genera otra venta. Sólo se deduplica un **mismo identificador de mensaje**, no frases idénticas con identificadores distintos.
 
@@ -44,10 +46,10 @@ WhatsApp (firma HMAC + remitente vinculado)   Chat (Supabase Auth)
                                |
        Lista ordenada → validación y centavos exactos (JS)
                                |
-     Supabase RPC: una transacción y bloqueo por negocio
-       un mensaje + movimientos + auditorías + respuesta
+      Supabase RPC por negocio autorizado y zona IANA
+       escritura: lote + auditoría / lectura: cifras SQL
                                |
-                 Texto determinista → chat / Meta
+          Respuesta determinista → chat / Meta
 ```
 
 - `src/interpret.js`: contrato JSON, prompt e integración con Gemini; intérprete local separado.
@@ -55,7 +57,7 @@ WhatsApp (firma HMAC + remitente vinculado)   Chat (Supabase Auth)
 - `src/service.js`: flujo común entre canales; verifica membresía antes de consultar recibos o interpretar.
 - `src/store.js`: acceso servidor a Supabase REST/RPC.
 - `src/voice.js`: validación de bytes, formato y duración; adaptador de transcripción Gemini separado del intérprete financiero.
-- `supabase/migrations/001_initial.sql`: reglas financieras originales; `002_batches.sql`: RPC transaccional para lotes y protección de correcciones.
+- `supabase/migrations/001_initial.sql`: reglas financieras originales; `002_batches.sql`: lotes; `003_queries.sql`: consultas autorizadas, periodos y resúmenes.
 - `src/whatsapp.js`: validación HMAC, procesamiento de todos los mensajes del lote, envío y reintentos con outbox.
 - `api/index.js`: sesiones, chat y webhook. No expone claves del servidor.
 - `api/audio`: acepta un archivo binario autenticado, comprueba membresía e idempotencia y entrega sólo su transcripción al servicio común.
@@ -85,6 +87,22 @@ Vercel publica archivos estáticos y una función Node. `NODEJS_HELPERS=0` prese
 | Ambigüedad | Importes aproximados, referencias vagas, componentes incompatibles, moneda distinta o fecha no soportada → pedir reformular; ningún movimiento del lote se guarda. |
 | Historial | Mensaje original, comando normalizado, respuesta, actor, origen y snapshots antes/después. No se usa memoria del modelo como registro. |
 
+## Consultas y resúmenes de Sprint 5
+
+Gemini sólo devuelve intención, periodo, métrica solicitada y fechas explícitas cuando el usuario las da. `process_financial_query` verifica `business_id` y membresía, toma la zona horaria IANA del negocio y lee movimientos y cuentas por cobrar. Excluye movimientos anulados. La respuesta se arma en `src/domain.js` a partir de esas cifras; Gemini no recibe el libro, no calcula totales, no consulta otros negocios y no escribe en la base. Texto y audio usan este mismo camino. Las consultas quedan en `messages` con identificador idempotente y respuesta guardada.
+
+| Pregunta | Cálculo y respuesta |
+|---|---|
+| “¿Cuánto vendí/gasté hoy, ayer, esta semana o mes pasado?” | Suma únicamente ventas o gastos no anulados del periodo solicitado. “Esta semana” empieza el lunes. |
+| “¿Cuánto me deben?” | Suma saldos positivos de cuentas abiertas: deuda original menos pagos no anulados. Puede filtrarse por nombre exacto. |
+| “¿Quién me debe?” | Agrupa saldos pendientes por contacto; no muestra cuentas pagadas. |
+| “¿Cómo me fue esta semana?” | Ventas, gastos registrados, saldo por cobrar, cobros si existen, número de movimientos, mejor día de ventas y comparación con semana anterior. No equivale a utilidad. |
+| “¿Vendí más que la semana pasada?” | Muestra ventas de ambos periodos, diferencia absoluta y porcentaje cuando el anterior es mayor que cero. Si el anterior es cero, no se presenta porcentaje. |
+| “¿Cuál fue mi mejor día?” | Agrupa ventas por fecha registrada; sin periodo explícito revisa el historial desde 2000. Si varios días empatan, enumera todos en orden de fecha. |
+| “¿Cómo va mi negocio?” | Resumen corto de hoy: ventas, gastos y saldo por cobrar; menciona ventas de ayer si hay ventas en alguno de esos días. Sin recomendaciones generativas. |
+
+Periodos admitidos: **hoy, ayer, esta semana, semana pasada, este mes, mes pasado**, una fecha `AAAA-MM-DD` explícita o un rango explícito válido. Las fechas relativas se resuelven en SQL con la zona del negocio; el mes anterior es un mes de calendario y la semana anterior va de lunes a domingo. Las consultas futuras o con rango inválido piden aclaración. Los pagos de deudas no se suman de nuevo a ventas. “Ventas menos gastos registrados”, si se calcula en el futuro, sólo podrá llamarse **diferencia entre ventas y gastos registrados**, nunca utilidad o ganancia neta. No hay resúmenes programados, notificaciones, asesoría generativa ni dashboard complejo.
+
 El contrato de Gemini es `{ambiguous, operations}`. Cada operación conserva `kind`, importe expresado o `quantity` y `unit_price`, fecha relativa y contacto cuando aplican. `sale_ref` enlaza una deuda con la posición de su venta en la lista; `upfront_paid` conserva un pago inicial explícito. Gemini sólo extrae datos: JS valida cada operación y calcula cantidad × precio en centavos; SQL decide saldos, fechas definitivas y mutaciones. La respuesta se compone en código, no en Gemini. Cada movimiento guarda `source_message_id` y tiene su propia fila de `movement_audit`. Un reintento con el mismo ID devuelve el recibo sin repetir el lote.
 
 Ejemplos: “Vendí 3 playeras en $900 y gasté $200 de gasolina”; “Ayer vendí $2,500, hoy llevo $1,800”; “Luis me debe $700 y Pedro $400”; “Vendí dos pantalones de $600 cada uno y una chamarra de $900”. “Le vendí a Pedro $600 y me lo quedó a deber” crea una venta y una deuda por $600. “Le vendí a Juan $1,000, me pagó $400 y me debe $600” crea una venta de $1,000 y una deuda de $600, con $400 de pago inicial anotado en la interpretación; no crea una segunda venta ni descuenta dos veces la deuda. El total de ventas no debe interpretarse como caja. No hay inventarios, SAT, facturas, empleados, recordatorios automáticos ni reportes de utilidad.
@@ -92,7 +110,7 @@ Ejemplos: “Vendí 3 playeras en $900 y gasté $200 de gasolina”; “Ayer ven
 ## Configurar Supabase nuevo
 
 1. Identifica por nombre e ID el **proyecto Supabase nuevo y exclusivo de Cuenta Clara**. Verifica su cuenta antes de ejecutar SQL. No selecciones uno existente de clientes o producción.
-2. En un proyecto vacío ejecuta en orden `supabase/migrations/001_initial.sql` y `supabase/migrations/002_batches.sql`. Si ya se completaron Sprints 1–3, ejecuta **sólo** `002_batches.sql` una vez. Verifica la referencia del proyecto antes de ejecutar SQL.
+2. En un proyecto vacío ejecuta en orden `001_initial.sql`, `002_batches.sql` y `003_queries.sql`. Si ya se completó Sprint 4, ejecuta **sólo** `supabase/migrations/003_queries.sql`. La función se puede volver a aplicar para actualizarla sin borrar datos. Verifica la referencia del proyecto antes de ejecutar SQL.
 3. En Authentication crea un usuario de piloto con correo y contraseña; para prueba usa una cuenta confirmada. El alta pública no forma parte de esta app.
 4. Copia su UUID y ejecuta `supabase/onboard.example.sql` tras sustituir el marcador. Genera un negocio nuevo y su membresía. Conserva el UUID mostrado.
 5. Copia `.env.example` a `.env.local`; configura `APP_MODE=live`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` y `GEMINI_MODEL`.
@@ -139,6 +157,7 @@ Con `GEMINI_API_KEY` configurada en `.env.local`, verifica primero la interpreta
 ```sh
 npm run test:gemini
 npm run test:batch-gemini
+npm run test:queries-gemini
 ```
 
 Con la migración y las demás variables configuradas en el proyecto Supabase aislado:
@@ -146,15 +165,16 @@ Con la migración y las demás variables configuradas en el proyecto Supabase ai
 ```sh
 npm run test:live
 npm run test:batch-live
+npm run test:queries-live
 ```
 
-La prueba `test:batch-gemini` comprueba las ocho frases válidas y cuatro ambiguas de Sprint 4 sin escribir en Supabase. `test:live` conserva el flujo original de $900. `test:batch-live` **crea un negocio de prueba nuevo** para `TEST_USER_ID`, registra el ejemplo de venta, gasto y deuda, consulta $2,600 vendidos hoy, verifica reintento y rollback, e inspecciona directamente `messages`, `movements` y `movement_audit`. Si se indica `VOICE_BATCH_SMOKE_FILE`, también transcribe el WAV con Gemini y registra su lote desde el endpoint de audio local. Los negocios de prueba se conservan para inspección. `SUPABASE_PROJECT_REF_CONFIRM` debe coincidir con el host de `SUPABASE_URL`.
+`test:queries-gemini` comprueba 14 preguntas con Gemini real sin consultar datos. `test:queries-live` crea un negocio de prueba nuevo en el proyecto Supabase confirmado, registra venta/gasto/deuda y verifica total diario, resumen semanal, deudores, comparación con cero, idempotencia y auditoría. Las pruebas de sprints previos siguen disponibles; los negocios de prueba se conservan para inspección. `SUPABASE_PROJECT_REF_CONFIRM` debe coincidir con el host de `SUPABASE_URL`.
 
 Para publicar:
 
-1. Verifica la URL y el propietario del **repositorio GitHub nuevo de Cuenta Clara**. Sube exclusivamente esta carpeta. No uses repositorios ni enlaces `.vercel` de clientes.
-2. Verifica la identidad de la **cuenta Vercel nueva**. Importa ese repositorio como **proyecto nuevo** en esa cuenta. Framework: Other; Node 24; salida: `public`; instalación `npm ci`; no requiere compilación del frontend.
-3. Configura las variables del proyecto nuevo con `APP_MODE=live`. La función vive en `api/index.js`; `vercel.json` contiene las rutas.
+1. Verifica la URL y el propietario del repositorio exclusivo `cristianmonroywork/whatsapp-crm`. Sube exclusivamente esta carpeta.
+2. Verifica que el proyecto Vercel existente `montecarlo1/whatsappcrm` (`prj_RbLP3TpxpJxLNxDLUCXquaZwO9aA`) sigue conectado a ese repositorio. Framework: Other; Node 24; salida: `public`; instalación `npm ci`; no requiere compilación del frontend.
+3. Conserva las variables de ese proyecto con `APP_MODE=live`. La función vive en `api/index.js`; `vercel.json` contiene las rutas.
 4. Mantén protección de acceso en la preview mientras validas el chat. Si Meta requiere acceso público al webhook, habilítalo deliberadamente para ese endpoint/proyecto de piloto y verifica su firma antes de conectar el número.
 5. Prueba inicio de sesión, venta, consulta, confirmación y reintento en la URL de preview. Comprueba que ninguna ruta permite operar sin sesión o remitente vinculado.
 
@@ -208,11 +228,11 @@ rm /private/tmp/cuenta-clara-sprint3.aiff /private/tmp/cuenta-clara-sprint3.wav
 
 El intérprete demo sigue separado y sólo entiende los ejemplos de texto limitados; la transcripción de voz real requiere `GEMINI_API_KEY` incluso en desarrollo.
 
-Limitaciones: no hay edición de la transcripción antes de enviarla, guardado de audio ni procesamiento de voz por WhatsApp. Si el proveedor de transcripción falla, no se escribe un mensaje financiero y puede reintentarse con el mismo ID.
+Limitaciones: no hay edición de la transcripción antes de enviarla, guardado de audio ni procesamiento de voz por WhatsApp. Si el proveedor de transcripción falla, no se escribe un mensaje financiero y puede reintentarse con el mismo ID. Una consulta hablada sí usa el mismo transcriptor e intérprete que el texto; no crea un movimiento.
 
 ## Pruebas y límites de verificación
 
-`npm test` ejecuta PostgreSQL local real vía PGlite, no un ledger falso de objetos JS: ambas migraciones, reglas, SQL y RLS. Cubre ventas/gastos, consultas, correcciones, pagos, aislamiento, audio y, para lotes, tipos mezclados, varias ventas/deudas, fiado, abono inicial, cantidad × precio, fechas distintas, operación inválida o ambigua, rollback, idempotencia y auditoría individual. Las peticiones concurrentes se prueban sobre una instancia local; PGlite serializa su conexión, así que no sustituye una prueba de carga multiconexión en Supabase. El bloqueo `FOR UPDATE` por negocio implementa la exclusión en PostgreSQL servidor.
+`npm test` ejecuta PostgreSQL local real vía PGlite, no un ledger falso de objetos JS: las tres migraciones, reglas, SQL y RLS. Cubre los flujos anteriores y, para consultas, hoy/ayer, semanas y meses, gastos, deudores, mejor día y empates, comparación y periodo anterior cero, zona horaria, negocio vacío, aislamiento, audio, lotes previos y anulaciones. PGlite serializa su conexión, así que no sustituye una prueba de carga multiconexión en Supabase. El bloqueo `FOR UPDATE` por negocio implementa la exclusión en PostgreSQL servidor.
 
 Verificación de Sprint 4: **44/44 pruebas locales**; **8/8 ejemplos válidos y 4/4 ambiguos** con Gemini real; prueba integral en el proyecto Supabase aislado con venta de $2,600, gasto de $450 y deuda de $800, consulta diaria de $2,600, reintento sin duplicados y auditoría de cada movimiento. Una nota WAV sintética con dos operaciones también pasó por transcripción, interpretación y persistencia real. En la web desplegada se registró otro lote de venta y gasto y se consultó el total actualizado. Estas pruebas escribieron sólo en un negocio de prueba dedicado, que se conserva para inspección.
 
