@@ -9,7 +9,7 @@ if(demo) {
  const store=await createLocalStore('.local/db');await store.seed();
  handler=createHandler({store,interpreter:demoInterpret,demoUser:DEMO_USER});
 } else handler=createHandler();
-const files={'/':'index.html','/app.js':'app.js','/style.css':'style.css'};
+const files={'/':'index.html','/app.js':'app.js','/style.css':'style.css','/privacy.html':'privacy.html','/admin.html':'admin.html','/admin.js':'admin.js'};
 createServer(async(req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
  if(path.startsWith('/api/')) return handler(req,res);

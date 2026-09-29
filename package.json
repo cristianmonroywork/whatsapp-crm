@@ -13,6 +13,7 @@
     "test:batch-gemini": "node --env-file=.env.local scripts/smoke-batch-gemini.js",
     "test:queries-gemini": "node --env-file=.env.local scripts/smoke-queries-gemini.js",
     "test:queries-live": "node --env-file=.env.local scripts/smoke-queries-live.js",
+    "test:pilot-live": "node --env-file=.env.local scripts/smoke-pilot-live.js",
     "test:batch-live": "node --env-file=.env.local scripts/smoke-batch-live.js",
     "test:live": "node --env-file=.env.local scripts/smoke-live.js",
     "test:voice-live": "node --env-file=.env.local scripts/smoke-voice-live.js",

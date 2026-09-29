@@ -11,7 +11,7 @@ function withTranscript(result,media) {
   }
   return {...result,text:media?.type==='audio'&&media.transcript ? `Escuché: ${media.transcript}\n${render(result)}` : render(result)};
 }
-export async function handleMessage({store,interpreter,business,actor,channel,externalId,text,media=null,quotaConsumed=false}) {
+export async function handleMessage({store,interpreter,business,actor,channel,externalId,text,media=null,quotaConsumed=false,limits={}}) {
   if(typeof text!=='string'||!text.trim()||text.length>4000||typeof externalId!=='string'||!externalId||externalId.length>200||!['web','whatsapp'].includes(channel)) {
     throw Object.assign(new Error('Mensaje inválido.'),{status:400});
   }
@@ -22,7 +22,7 @@ export async function handleMessage({store,interpreter,business,actor,channel,ex
     if(receipt.actor_id!==actor||receipt.fingerprint!==fingerprint) throw Object.assign(new Error('Ese identificador ya se utilizó con otro mensaje.'),{status:409});
     return {...withTranscript(receipt.response,receipt.media||media),duplicate:true};
   }
-  if(!quotaConsumed&&!await store.quota(actor)) throw Object.assign(new Error('Demasiados mensajes. Intenta de nuevo en un minuto.'),{status:429});
+  if(!quotaConsumed&&!await store.quota(actor,business,limits)) throw Object.assign(new Error('Llegaste al límite de mensajes del piloto. Intenta más tarde.'),{status:429});
   const command=media?.type==='audio'&&(!media.transcribed||media.ambiguous) ? {intent:'clarify'} : control(text)||normalizeInput(await interpreter(text));
   const envelope={p_business:business,p_actor:actor,p_channel:channel,p_external_id:externalId,p_fingerprint:fingerprint,p_content:text,p_media:media};
   const result=command.intent==='batch' ? await store.batch({...envelope,p_commands:command.operations}) : queryIntents.has(command.intent) ? await store.query({...envelope,p_command:command}) : await store.process({...envelope,p_command:command});

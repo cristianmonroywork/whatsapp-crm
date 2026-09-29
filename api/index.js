@@ -3,6 +3,7 @@ import {interpret} from '../src/interpret.js';
 import {handleMessage,messageFingerprint} from '../src/service.js';
 import {MAX_AUDIO_BYTES,validateAudio,transcribeAudio} from '../src/voice.js';
 import {validSignature,receiveWhatsApp} from '../src/whatsapp.js';
+import {timingSafeEqual} from 'node:crypto';
 
 export async function readBody(req,limit=65536) {
   let length=0;const chunks=[];
@@ -12,12 +13,30 @@ export async function readBody(req,limit=65536) {
 function reply(res,status,body) {res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(body));}
 function cookie(req,name) {return (req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(`${name}=`))?.slice(name.length+1);}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const limit=(value,fallback,max)=>{const n=Number(value);return Number.isInteger(n)&&n>0&&n<=max?n:fallback;};
+const same=(a,b)=>{const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&x.length>0&&timingSafeEqual(x,y);};
+async function touch(store,actor,business) {try {await store.presence?.(actor,business);} catch {}}
+function friendlyError(error,status) {
+ if(['El audio está vacío.','El audio supera 3 MB.','El audio supera 60 segundos.','No pude leer el audio.','Envía sólo audio.','No pude comprobar la duración del audio.'].includes(error?.message))return error.message;
+ if(status===401)return 'Tu sesión venció o las credenciales son incorrectas. Entra de nuevo.';
+ if(status===403)return 'No tienes acceso a ese negocio.';
+ if(status===404)return 'No encontré esa página.';
+ if(status===409)return 'Esa cuenta o solicitud ya existe. Revisa tus datos.';
+ if(status===413)return 'El archivo o mensaje es demasiado grande.';
+ if(status===415)return 'Ese formato de audio no es compatible.';
+ if(status===422)return 'No pude entender o validar ese audio. Prueba con una nota más clara.';
+ if(status===429)return 'Llegaste al límite temporal del piloto. Intenta más tarde.';
+ if(error?.name==='TimeoutError'||error?.name==='AbortError')return 'La conexión tardó demasiado. Reintenta con el mismo mensaje.';
+ if(status>=500)return 'El servicio está ocupado. Reintenta con el mismo mensaje; no se duplicará.';
+ return 'No pude completar la solicitud. Revisa los datos e intenta de nuevo.';
+}
 export function createHandler({store,interpreter=interpret,transcriber=transcribeAudio,demoUser=null,env=process.env,fetcher=fetch}={}) {
  return async function handler(req,res) {
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
+  let path='unknown',actor=null,business=null;
   try {
    if(env.VERCEL && (demoUser || env.APP_MODE==='demo')) throw new Error('Demo mode forbidden on Vercel');
-   const path=new URL(req.url,'http://local').pathname;
+   path=new URL(req.url,'http://local').pathname;
    if(path==='/api/health') return reply(res,200,{ok:true,mode:demoUser?'demo':'live'});
    if(!store) store=new SupabaseStore(env,fetcher);
    if(path==='/api/whatsapp') {
@@ -38,6 +57,14 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
     const origin=new URL(req.headers.origin);
     if(origin.host!==req.headers.host) return reply(res,403,{error:'Origen inválido.'});
    }
+   if(path==='/api/signup' && req.method==='POST') {
+    if(demoUser||env.PILOT_SIGNUP_ENABLED!=='true'||String(env.PILOT_INVITE_CODE||'').length<16) return reply(res,404,{error:'El alta de pilotos no está disponible.'});
+    const {email,password,inviteCode}=JSON.parse((await readBody(req,8192)).toString());
+    if(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)||email.length>254||typeof password!=='string'||password.length<10||password.length>128||!same(inviteCode,env.PILOT_INVITE_CODE)) return reply(res,400,{error:'Revisa el correo, la contraseña y el código de invitación.'});
+    const data=await store.auth('signup',{body:{email:email.trim(),password}});
+    if(data.access_token) res.setHeader('Set-Cookie',`cc_session=${data.access_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.min(data.expires_in||3600,3600)}${env.VERCEL?'; Secure':''}`);
+    return reply(res,200,{ok:true,checkEmail:!data.access_token});
+   }
    if(path==='/api/login' && req.method==='POST') {
     if(demoUser) return reply(res,200,{ok:true});
     const {email,password}=JSON.parse((await readBody(req,8192)).toString());
@@ -52,17 +79,41 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
    }
    const token=cookie(req,'cc_session');
    if(!demoUser&&!token) return reply(res,401,{error:'Inicia sesión para continuar.'});
-   const actor=demoUser || (await store.auth('user',{token})).id;
-   if(path==='/api/session'&&req.method==='GET') return reply(res,200,{mode:demoUser?'demo':'live',businesses:await store.businesses(actor)});
+   actor=demoUser || (await store.auth('user',{token})).id;
+   if(path==='/api/session'&&req.method==='GET') {
+    const list=await store.businesses(actor);
+    await Promise.all(list.filter(b=>b.is_pilot).map(b=>store.presence(actor,b.id)));
+    return reply(res,200,{mode:demoUser?'demo':'live',businesses:list,operator:await store.operator(actor)});
+   }
+   if(path==='/api/businesses'&&req.method==='POST') {
+    const input=JSON.parse((await readBody(req,8192)).toString());
+    const name=typeof input.name==='string'&&input.name.trim()?input.name.trim():'Mi negocio';
+    if(name.length>120||typeof input.timezone!=='string'||input.timezone.length>100) return reply(res,400,{error:'Revisa el nombre y la zona horaria.'});
+    const result=await store.createPilotBusiness(actor,name,input.timezone);
+    return reply(res,200,result);
+   }
+   if(path==='/api/admin/pilots'&&req.method==='GET') {
+    if(!await store.operator(actor)) return reply(res,403,{error:'No tienes acceso al panel.'});
+    return reply(res,200,{pilots:await store.dashboard(actor)});
+   }
+   if(path==='/api/admin/deactivate'&&req.method==='POST') {
+    if(!await store.operator(actor)) return reply(res,403,{error:'No tienes acceso al panel.'});
+    const input=JSON.parse((await readBody(req,8192)).toString());
+    if(!uuid.test(input.businessId||'')||typeof input.name!=='string'||input.phrase!=='DESACTIVAR PILOTO')return reply(res,400,{error:'La confirmación no coincide.'});
+    return reply(res,200,await store.deactivatePilot(actor,input.businessId,input.name,input.phrase));
+   }
    if(path==='/api/messages'&&req.method==='POST') {
     const {businessId,id,text}=JSON.parse((await readBody(req,16384)).toString());
     if(!uuid.test(businessId||'')) return reply(res,400,{error:'Negocio inválido.'});
-    const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text});
+    business=businessId;
+    const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text,limits:{perMinute:limit(env.PILOT_MESSAGES_PER_MINUTE,30,1000),perDay:limit(env.PILOT_MESSAGES_PER_DAY,250,10000)}});
+    await touch(store,actor,businessId);
     return reply(res,200,result);
    }
    if(path==='/api/audio'&&req.method==='POST') {
     const businessId=req.headers['x-cc-business-id'],id=req.headers['x-cc-message-id'];
     if(!uuid.test(businessId||'')||!uuid.test(id||'')) return reply(res,400,{error:'Negocio o mensaje inválido.'});
+    business=businessId;
     if(Number(req.headers['content-length'])>MAX_AUDIO_BYTES) return reply(res,413,{error:'El audio supera 3 MB.'});
     const bytes=await readBody(req,MAX_AUDIO_BYTES);
     const details=await validateAudio(bytes,req.headers['content-type']);
@@ -73,22 +124,28 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
       if(receipt.actor_id!==actor||receipt.fingerprint!==messageFingerprint('',media)) return reply(res,409,{error:'Ese identificador ya se utilizó con otro mensaje.'});
       const transcript=receipt.media?.transcript||receipt.media?.transcribed_text||'';
       const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text:transcript||'[Audio sin voz inteligible]',media:{...media,...receipt.media}});
+      await touch(store,actor,businessId);
       return reply(res,200,{...result,transcript});
     }
-    if(!await store.quota(actor)) return reply(res,429,{error:'Demasiados mensajes. Intenta de nuevo en un minuto.'});
+    if(!await store.quota(actor,businessId,{perMinute:limit(env.PILOT_MESSAGES_PER_MINUTE,30,1000),perDay:limit(env.PILOT_MESSAGES_PER_DAY,250,10000)})) return reply(res,429,{error:'Llegaste al límite de mensajes del piloto. Intenta más tarde.'});
     const transcription=await transcriber(bytes,{mime:details.mime,key:env.GEMINI_API_KEY,model:env.GEMINI_TRANSCRIBE_MODEL||env.GEMINI_MODEL||'gemini-3.5-flash-lite',fetcher});
     const transcript=typeof transcription?.text==='string'?transcription.text.trim():'';
     if(transcript.length>4000) return reply(res,422,{error:'La transcripción es demasiado larga.'});
     const fullMedia={...media,transcribed:true,transcript,transcription_provider:transcription.provider||'gemini',transcription_model:transcription.model||null,ambiguous:!transcript};
     const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text:transcript||'[Audio sin voz inteligible]',media:fullMedia,quotaConsumed:true});
+    await touch(store,actor,businessId);
     return reply(res,200,{...result,transcript});
    }
    return reply(res,404,{error:'Ruta no encontrada.'});
   } catch(error) {
    // No message bodies, tokens, passwords or model output in logs.
    const status=error instanceof SyntaxError?400:error.status||503;
-   console.error(JSON.stringify({event:'request_failed',status}));
-   reply(res,status,{error:status===503?'No pude completar la solicitud. Reintenta con el mismo mensaje; no se duplicará.':status===400?'Solicitud inválida.':error.message});
+   const code=error?.name==='TimeoutError'?'timeout':status===503?'provider_or_database':`http_${status}`;
+   console.error(JSON.stringify({event:'request_failed',endpoint:path,status,code,at:new Date().toISOString(),actor:actor||undefined,business:business||undefined}));
+   if(actor&&business&&uuid.test(business)) {
+    try {if(await store.membership(actor,business)) await store.event(actor,business,'error_returned',code);} catch {}
+   }
+   reply(res,status,{error:friendlyError(error,status)});
   }
  };
 }

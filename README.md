@@ -1,8 +1,8 @@
-# Cuenta Clara — MVP Sprint 5
+# Cuenta Clara — MVP Sprint 5.5
 
 Asistente de cuentas para micronegocios en México. Canal previsto: WhatsApp; incluye un chat pequeño para probar el mismo servicio. Proyecto nuevo e independiente, sin vínculo a recursos ni proyectos de otros clientes.
 
-**Estado:** texto y notas de voz usan el mismo servicio financiero; permiten registrar lotes y consultar cifras reales del negocio en lenguaje natural. La integración Meta sigue pendiente y fuera de este sprint.
+**Estado:** texto y notas de voz usan el mismo servicio financiero; permiten registrar lotes y consultar cifras reales del negocio en lenguaje natural. Sprint 5.5 añade alta por invitación, métricas y operación de 3–5 pilotos. La integración Meta sigue pendiente.
 
 ## Probar ahora
 
@@ -57,7 +57,7 @@ WhatsApp (firma HMAC + remitente vinculado)   Chat (Supabase Auth)
 - `src/service.js`: flujo común entre canales; verifica membresía antes de consultar recibos o interpretar.
 - `src/store.js`: acceso servidor a Supabase REST/RPC.
 - `src/voice.js`: validación de bytes, formato y duración; adaptador de transcripción Gemini separado del intérprete financiero.
-- `supabase/migrations/001_initial.sql`: reglas financieras originales; `002_batches.sql`: lotes; `003_queries.sql`: consultas autorizadas, periodos y resúmenes.
+- `supabase/migrations/001_initial.sql`: reglas financieras originales; `002_batches.sql`: lotes; `003_queries.sql`: consultas; `004_pilot.sql`: alta, métricas, límites, operador y desactivación.
 - `src/whatsapp.js`: validación HMAC, procesamiento de todos los mensajes del lote, envío y reintentos con outbox.
 - `api/index.js`: sesiones, chat y webhook. No expone claves del servidor.
 - `api/audio`: acepta un archivo binario autenticado, comprueba membresía e idempotencia y entrega sólo su transcripción al servicio común.
@@ -65,6 +65,20 @@ WhatsApp (firma HMAC + remitente vinculado)   Chat (Supabase Auth)
 - `scripts/local-store.js`: sólo desarrollo y pruebas; misma migración SQL con sustitutos locales de los roles/Auth de Supabase.
 
 Vercel publica archivos estáticos y una función Node. `NODEJS_HELPERS=0` preserva el cuerpo HTTP original para verificar la firma. No se necesita Next.js para este sprint. No hay estado financiero en memoria de la función.
+
+## Alta y operación del piloto (Sprint 5.5)
+
+El operador comparte la URL de la PWA y un código de invitación con 3–5 vendedores. Cada vendedor pulsa **Crear cuenta piloto**, usa su correo y una contraseña de al menos 10 caracteres, confirma su correo si Supabase lo solicita, inicia sesión y crea su negocio. Puede poner un nombre comercial o aceptar «Mi negocio» y escoger una zona horaria IANA de México. La API obtiene el usuario desde la sesión de Supabase Auth, crea perfil, negocio `is_pilot=true`, membresía `owner` y eventos iniciales en una sola transacción SQL. No se necesita SQL por vendedor. Un usuario no puede crear dos negocios piloto activos con este flujo. Una cuenta comercial futura no tendrá `is_pilot`; las métricas y la limpieza del piloto se filtran por ese indicador.
+
+Para habilitar altas en el proyecto aislado: aplica `004_pilot.sql`, configura `PILOT_SIGNUP_ENABLED=true` y un `PILOT_INVITE_CODE` largo y aleatorio **sólo** en variables seguras de Vercel y vuelve a desplegar. Configura en Supabase Auth la URL del deployment piloto para confirmación de correo. El código de invitación no se guarda en el navegador ni en Supabase. Las sesiones usan cookie HttpOnly, SameSite=Strict y Secure en Vercel. Todas las acciones financieras vuelven a verificar la membresía en servidor y SQL; `business_id` del navegador por sí solo no autoriza nada.
+
+El panel `/admin.html` sólo entrega datos mediante `/api/admin/pilots` si el usuario autenticado figura en `pilot_operators`. Ésta es una designación **única del operador**, no un alta manual por vendedor. Después de la migración, inserta el UUID del usuario operador ya confirmado en `pilot_operators` dentro del proyecto Cuenta Clara; no añadas otros usuarios por defecto. La tabla muestra negocios piloto, usuario, alta, último acceso, mensajes, operaciones, consultas, voz, errores y sesiones activas (actividad en los últimos 15 minutos). No muestra importes ni contenido de mensajes. Los eventos `signup_completed`, `business_created`, `message_text_sent`, `message_audio_sent`, `transaction_created`, `query_executed`, `ambiguity_returned`, `error_returned`, `correction_requested`, `correction_confirmed`, `deletion_confirmed`, `session_started` y `pilot_deactivated` conservan usuario, negocio, fecha y tipo; `error_returned` añade sólo categoría de error. Las operaciones de un lote producen eventos separados. Los eventos del mismo mensaje no se repiten al reintentarlo.
+
+El operador puede pulsar **Desactivar** en el panel. Debe escribir el nombre exacto del negocio y la frase `DESACTIVAR PILOTO`. La función SQL exige además que sea operador y que el destino sea un piloto activo; deja `is_active=false` y registra `pilot_deactivated`. Desde entonces el vendedor no puede verlo ni registrar o consultar datos, incluso si manipula el ID. **La desactivación es reversible a nivel de datos y conserva mensajes, transcripciones, movimientos y auditoría** para investigar el piloto. La eliminación definitiva requiere un procedimiento posterior controlado; la página `/privacy.html` indica al vendedor que la solicite al operador que lo invitó. No se ejecuta un borrado físico automático.
+
+Límites por defecto: 30 mensajes por minuto por usuario y 250 por día local del negocio; configurables con `PILOT_MESSAGES_PER_MINUTE` y `PILOT_MESSAGES_PER_DAY`. Se mantienen los límites de 3 MB y 60 segundos por audio y 8 operaciones por lote. Los reintentos con el mismo ID son idempotentes y no vuelven a consumir cuota. Un negocio vacío responde, por ejemplo, «Aún no tienes ventas registradas esta semana». Los errores de sesión, cuota, audio y servicio se presentan en lenguaje simple. Los logs sólo incluyen endpoint, estado, categoría, fecha e IDs internos cuando existen; nunca contenido, audio, contraseña o claves.
+
+Antes de este sprint se comprobó una grabación real desde la web piloto: se transcribió «Gasté 35 de gasolina», generó un gasto de $35 y la consulta posterior mostró $235 de gastos acumulados en ese negocio de prueba. El usuario detectó que la vista previa no activaba la reproducción; la interfaz ahora carga explícitamente el audio y ofrece **▶ Escuchar** antes de enviarlo. Debe repetirse esta prueba en la versión desplegada para confirmar la corrección.
 
 ## Reglas del MVP
 
@@ -110,7 +124,7 @@ Ejemplos: “Vendí 3 playeras en $900 y gasté $200 de gasolina”; “Ayer ven
 ## Configurar Supabase nuevo
 
 1. Identifica por nombre e ID el **proyecto Supabase nuevo y exclusivo de Cuenta Clara**. Verifica su cuenta antes de ejecutar SQL. No selecciones uno existente de clientes o producción.
-2. En un proyecto vacío ejecuta en orden `001_initial.sql`, `002_batches.sql` y `003_queries.sql`. Si ya se completó Sprint 4, ejecuta **sólo** `supabase/migrations/003_queries.sql`. La función se puede volver a aplicar para actualizarla sin borrar datos. Verifica la referencia del proyecto antes de ejecutar SQL.
+2. En un proyecto vacío ejecuta en orden `001_initial.sql`, `002_batches.sql`, `003_queries.sql` y `004_pilot.sql`. Si ya se completó Sprint 5, ejecuta **sólo** `supabase/migrations/004_pilot.sql`. Verifica la referencia del proyecto antes de ejecutar SQL.
 3. En Authentication crea un usuario de piloto con correo y contraseña; para prueba usa una cuenta confirmada. El alta pública no forma parte de esta app.
 4. Copia su UUID y ejecuta `supabase/onboard.example.sql` tras sustituir el marcador. Genera un negocio nuevo y su membresía. Conserva el UUID mostrado.
 5. Copia `.env.example` a `.env.local`; configura `APP_MODE=live`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` y `GEMINI_MODEL`.
@@ -131,6 +145,9 @@ La `service_role` es **sólo servidor**. Nunca uses prefijos públicos ni la peg
 | `GEMINI_API_KEY` | Clave del proyecto Gemini para este piloto. |
 | `GEMINI_MODEL` | Modelo con Structured Outputs; valor inicial `gemini-3.5-flash-lite`, modificable. |
 | `GEMINI_TRANSCRIBE_MODEL` | Opcional: modelo Gemini para transcribir audio; por defecto usa `GEMINI_MODEL`. No requiere otra clave. |
+| `PILOT_SIGNUP_ENABLED` | `true` para mostrar altas con invitación en el deployment piloto; `false` por defecto. |
+| `PILOT_INVITE_CODE` | Código secreto largo para los vendedores invitados; sólo en entorno seguro, no en Git ni frontend. |
+| `PILOT_MESSAGES_PER_MINUTE` / `PILOT_MESSAGES_PER_DAY` | Límites configurables; valores por defecto 30 y 250. |
 | `VOICE_SMOKE_FILE` | Sólo prueba local real: ruta del audio temporal con “Gasté trescientos cincuenta pesos de gasolina”. |
 | `VOICE_BATCH_SMOKE_FILE` | Opcional para `test:batch-live`: WAV temporal con dos operaciones claras. No se conserva. |
 | `PORT` | Puerto local; 3000 por defecto. |
@@ -166,9 +183,12 @@ Con la migración y las demás variables configuradas en el proyecto Supabase ai
 npm run test:live
 npm run test:batch-live
 npm run test:queries-live
+npm run test:pilot-live
 ```
 
 `test:queries-gemini` comprueba 14 preguntas con Gemini real sin consultar datos. `test:queries-live` crea un negocio de prueba nuevo en el proyecto Supabase confirmado, registra venta/gasto/deuda y verifica total diario, resumen semanal, deudores, comparación con cero, idempotencia y auditoría. Las pruebas de sprints previos siguen disponibles; los negocios de prueba se conservan para inspección. `SUPABASE_PROJECT_REF_CONFIRM` debe coincidir con el host de `SUPABASE_URL`.
+
+`test:pilot-live` comprueba el alta de negocio piloto, eventos, panel e idempotencia con Gemini y Supabase reales. Designa como operador al usuario de prueba confirmado `TEST_USER_ID`, crea un negocio de prueba y lo **desactiva** al finalizar; sus registros quedan conservados para auditoría. Debe ejecutarse sólo en el proyecto aislado confirmado y después de `004_pilot.sql`.
 
 Para publicar:
 
@@ -232,7 +252,7 @@ Limitaciones: no hay edición de la transcripción antes de enviarla, guardado d
 
 ## Pruebas y límites de verificación
 
-`npm test` ejecuta PostgreSQL local real vía PGlite, no un ledger falso de objetos JS: las tres migraciones, reglas, SQL y RLS. Cubre los flujos anteriores y, para consultas, hoy/ayer, semanas y meses, gastos, deudores, mejor día y empates, comparación y periodo anterior cero, zona horaria, negocio vacío, aislamiento, audio, lotes previos y anulaciones. PGlite serializa su conexión, así que no sustituye una prueba de carga multiconexión en Supabase. El bloqueo `FOR UPDATE` por negocio implementa la exclusión en PostgreSQL servidor.
+`npm test` ejecuta PostgreSQL local real vía PGlite, no un ledger falso de objetos JS: las cuatro migraciones, reglas, SQL y RLS. Cubre los flujos anteriores y, para Sprint 5.5, alta, membresía, bandera de piloto, eventos, límites, panel, desactivación, aislamiento, estado vacío, sesión caducada y errores seguros. PGlite serializa su conexión, así que no sustituye una prueba de carga multiconexión en Supabase. El bloqueo `FOR UPDATE` por negocio implementa la exclusión en PostgreSQL servidor.
 
 Verificación de Sprint 4: **44/44 pruebas locales**; **8/8 ejemplos válidos y 4/4 ambiguos** con Gemini real; prueba integral en el proyecto Supabase aislado con venta de $2,600, gasto de $450 y deuda de $800, consulta diaria de $2,600, reintento sin duplicados y auditoría de cada movimiento. Una nota WAV sintética con dos operaciones también pasó por transcripción, interpretación y persistencia real. En la web desplegada se registró otro lote de venta y gasto y se consultó el total actualizado. Estas pruebas escribieron sólo en un negocio de prueba dedicado, que se conserva para inspección.
 
