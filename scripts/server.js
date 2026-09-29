@@ -9,7 +9,7 @@ if(demo) {
  const store=await createLocalStore('.local/db');await store.seed();
  handler=createHandler({store,interpreter:demoInterpret,demoUser:DEMO_USER});
 } else handler=createHandler();
-const files={'/':'index.html','/app.js':'app.js','/audio-preview.js':'audio-preview.js','/style.css':'style.css','/privacy.html':'privacy.html','/admin.html':'admin.html','/admin.js':'admin.js','/manifest.webmanifest':'manifest.webmanifest','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/apple-touch-icon.png':'apple-touch-icon.png'};
+const files={'/':'index.html','/app.js':'app.js','/audio-preview.js':'audio-preview.js','/style.css':'style.css','/privacy.html':'privacy.html','/install.html':'install.html','/admin.html':'admin.html','/admin.js':'admin.js','/manifest.webmanifest':'manifest.webmanifest','/icon-192.png':'icon-192.png','/icon-512.png':'icon-512.png','/apple-touch-icon.png':'apple-touch-icon.png'};
 createServer(async(req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
  if(path.startsWith('/api/')) return handler(req,res);

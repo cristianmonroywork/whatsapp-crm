@@ -12,6 +12,8 @@ La paleta aprobada es `#F6C992`, `#30525C`, `#ACC0D3`, `#D396A6`, `#09A1A1` y `#
 
 `manifest.webmanifest` y los iconos PNG de 192 y 512 px permiten que navegadores compatibles ofrezcan instalar Cuenta Clara. El servicio requiere conexión; no se almacenan respuestas financieras fuera de línea. Para comprobar la experiencia en dispositivos: abrir la URL HTTPS en Safari de iPhone y Chrome de Android, añadirla a la pantalla de inicio, iniciar sesión, grabar/escuchar/cancelar/enviar una nota, abrir el teclado y revisar que el historial y el campo de entrada sigan accesibles. Repetir en escritorio con ancho amplio y estrecho. La presencia de una opción de instalación depende del navegador y dispositivo; no se ofrece un botón propio de instalación.
 
+En iPhone, la instalación se inicia manualmente desde Safari: Compartir → Agregar a pantalla de inicio → Abrir como app cuando esté disponible. `/install.html` explica esos pasos y se enlaza desde la portada y el menú móvil. Android sí mostró la opción de instalación en la prueba del usuario. En la vista móvil, el botón **Menú** permite abrir privacidad, consultar las instrucciones de instalación, entrar al panel si la sesión tiene permiso de operador y cerrar sesión. La selección de negocio permanece visible encima del chat.
+
 ## Probar ahora
 
 Requisitos: Node.js 22.9+ o 24 y npm.

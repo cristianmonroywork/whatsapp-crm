@@ -13,13 +13,17 @@ function account(mode='login',message='Entra a tu cuenta para continuar.') {
  window.scrollTo({top:0,behavior:'auto'});
 }
 function home(){if(!$('workspace').hidden)return;$('landing').hidden=false;$('account').hidden=true;window.scrollTo({top:0,behavior:'auto'});}
+function closeMobileMenu(){const menu=$('mobile-menu'),button=$('mobile-menu-toggle');menu.hidden=true;button.setAttribute('aria-expanded','false');button.setAttribute('aria-label','Abrir menú');}
+$('mobile-menu-toggle').addEventListener('click',()=>{const menu=$('mobile-menu'),button=$('mobile-menu-toggle');menu.hidden=!menu.hidden;button.setAttribute('aria-expanded',String(!menu.hidden));button.setAttribute('aria-label',menu.hidden?'Abrir menú':'Cerrar menú');});
+document.addEventListener('click',event=>{if(!$('mobile-menu').hidden&&!$('mobile-menu').contains(event.target)&&!$('mobile-menu-toggle').contains(event.target))closeMobileMenu();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMobileMenu();});
 document.querySelectorAll('[data-auth]').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();account(link.dataset.auth,link.dataset.auth==='signup'?'Crea tu cuenta con el código de invitación que recibiste.':'Entra a tu cuenta para continuar.');}));
 $('back-home').addEventListener('click',home);
 async function session() {
  try {
   const data=await api('session');businesses=data.businesses;$('business').replaceChildren();
   businesses.forEach(b=>{const o=document.createElement('option');o.value=b.id;o.textContent=b.name;$('business').append(o);});if(pending&&businesses.some(b=>b.id===pending.businessId))$('business').value=pending.businessId;timezone();
-  $('landing').hidden=true;$('login').hidden=true;$('signup').hidden=true;$('account').hidden=!!businesses.length;$('onboarding').hidden=!!businesses.length;$('workspace').hidden=!businesses.length;$('admin-link').hidden=!data.operator;
+  $('landing').hidden=true;$('login').hidden=true;$('signup').hidden=true;$('account').hidden=!!businesses.length;$('onboarding').hidden=!!businesses.length;$('workspace').hidden=!businesses.length;$('admin-link').hidden=!data.operator;$('mobile-admin-link').hidden=!data.operator;closeMobileMenu();
   $('notice').textContent=!businesses.length?'Agrega tu negocio para empezar.':'';window.scrollTo({top:0,behavior:'auto'});
   $('connection').textContent='Aquí puedes contarme lo que pasó en tu negocio';
  } catch(e){$('workspace').hidden=true;$('onboarding').hidden=true;$('account').hidden=true;$('landing').hidden=false;if(e.status!==401)account('login',e.message);}
@@ -39,8 +43,10 @@ $('compose').addEventListener('submit',async e=>{e.preventDefault();if(pending||
 $('retry').addEventListener('click',send);
 $('text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('compose').requestSubmit();}});
 document.querySelectorAll('[data-example]').forEach(b=>b.addEventListener('click',()=>{if(!pending&&!busy){$('text').value=b.dataset.example;$('text').focus();}}));
-$('business').addEventListener('change',()=>{$('messages').replaceChildren();bubble('Cambiaste de negocio. Los siguientes mensajes se guardarán aquí.');timezone();clearAudio();});
-$('logout').addEventListener('click',async()=>{await api('logout',{});pending=null;location.reload();});
+$('business').addEventListener('change',()=>{$('messages').replaceChildren();bubble('Cambiaste de negocio. Los siguientes mensajes se guardarán aquí.');timezone();clearAudio();closeMobileMenu();});
+async function logout(){closeMobileMenu();await api('logout',{});pending=null;location.reload();}
+$('logout').addEventListener('click',logout);
+$('mobile-logout').addEventListener('click',logout);
 $('logout-onboarding').addEventListener('click',async()=>{await api('logout',{});location.reload();});
 await session();
 

@@ -7,10 +7,15 @@ test('commercial pages keep the approved palette and visible account controls',a
  const privacy=await readFile('public/privacy.html','utf8');
  const admin=await readFile('public/admin.html','utf8');
  const css=await readFile('public/style.css','utf8');
- for(const section of ['como-funciona','preguntas','landing','account','workspace','login','signup','onboarding','messages','record','voice-preview','admin-link'])assert.match(landing,new RegExp(`id="${section}"`));
+ for(const section of ['como-funciona','preguntas','landing','account','workspace','login','signup','onboarding','messages','record','voice-preview','admin-link','mobile-menu-toggle','mobile-menu','mobile-admin-link','mobile-logout'])assert.match(landing,new RegExp(`id="${section}"`));
  assert.match(landing,/Lleva las cuentas de tu negocio/);
  assert.match(landing,/hablando como siempre/);
- for(const html of [landing,privacy,admin])assert.doesNotMatch(html,/\b(piloto|demo|prueba|beta|experimental|Supabase|Gemini|CRM|API)\b/i);
+ assert.match(landing,/aria-expanded="false"/);
+ assert.match(landing,/id="mobile-admin-link"[^>]*hidden/);
+ assert.match(await readFile('public/app.js','utf8'),/\$\('mobile-logout'\)\.addEventListener\('click',logout\)/);
+ const install=await readFile('public/install.html','utf8');
+ assert.match(install,/Agregar a pantalla de inicio/);
+ for(const html of [landing,privacy,admin,install])assert.doesNotMatch(html,/\b(piloto|demo|prueba|beta|experimental|Supabase|Gemini|CRM|API)\b/i);
  for(const color of ['#F6C992','#30525C','#ACC0D3','#D396A6','#09A1A1','#5484A4'])assert.ok(css.includes(color),`${color} missing`);
  assert.match(css,/100dvh/);
  assert.match(css,/safe-area-inset-bottom/);
