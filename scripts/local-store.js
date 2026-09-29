@@ -26,7 +26,7 @@ export async function createLocalStore(path) {
   },
   async membership(actor,business) {return (await db.query('select 1 from memberships where business_id=$1 and user_id=$2',[business,actor])).rows.length===1;},
   async businesses(actor) {return (await db.query('select b.id,b.name,b.timezone from businesses b join memberships m on b.id=m.business_id where m.user_id=$1',[actor])).rows;},
-  async receipt(business,channel,id) {return (await db.query('select id,actor_id,fingerprint,response from messages where business_id=$1 and channel=$2 and external_id=$3',[business,channel,id])).rows[0];},
+  async receipt(business,channel,id) {return (await db.query('select id,actor_id,fingerprint,response,media from messages where business_id=$1 and channel=$2 and external_id=$3',[business,channel,id])).rows[0];},
   async process(a) {return (await db.query('select process_command($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_command),JSON.stringify(a.p_media)])).rows[0].result;},
   async quota(actor) {return (await db.query('select consume_quota($1) as allowed',[actor])).rows[0].allowed;},
   async binding(phone,sender) {return (await db.query("select business_id,user_id from channel_bindings where channel='whatsapp' and phone_number_id=$1 and sender_id=$2",[phone,sender])).rows[0];},

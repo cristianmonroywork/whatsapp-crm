@@ -1,6 +1,7 @@
 import {SupabaseStore} from '../src/store.js';
 import {interpret} from '../src/interpret.js';
-import {handleMessage} from '../src/service.js';
+import {handleMessage,messageFingerprint} from '../src/service.js';
+import {MAX_AUDIO_BYTES,validateAudio,transcribeAudio,multipleVoiceOperations} from '../src/voice.js';
 import {validSignature,receiveWhatsApp} from '../src/whatsapp.js';
 
 export async function readBody(req,limit=65536) {
@@ -11,7 +12,7 @@ export async function readBody(req,limit=65536) {
 function reply(res,status,body) {res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(body));}
 function cookie(req,name) {return (req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(`${name}=`))?.slice(name.length+1);}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export function createHandler({store,interpreter=interpret,demoUser=null,env=process.env,fetcher=fetch}={}) {
+export function createHandler({store,interpreter=interpret,transcriber=transcribeAudio,demoUser=null,env=process.env,fetcher=fetch}={}) {
  return async function handler(req,res) {
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
   try {
@@ -58,6 +59,29 @@ export function createHandler({store,interpreter=interpret,demoUser=null,env=pro
     if(!uuid.test(businessId||'')) return reply(res,400,{error:'Negocio inválido.'});
     const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text});
     return reply(res,200,result);
+   }
+   if(path==='/api/audio'&&req.method==='POST') {
+    const businessId=req.headers['x-cc-business-id'],id=req.headers['x-cc-message-id'];
+    if(!uuid.test(businessId||'')||!uuid.test(id||'')) return reply(res,400,{error:'Negocio o mensaje inválido.'});
+    if(Number(req.headers['content-length'])>MAX_AUDIO_BYTES) return reply(res,413,{error:'El audio supera 3 MB.'});
+    const bytes=await readBody(req,MAX_AUDIO_BYTES);
+    const details=await validateAudio(bytes,req.headers['content-type']);
+    if(!await store.membership(actor,businessId)) return reply(res,403,{error:'No autorizado.'});
+    const receipt=await store.receipt(businessId,'web',id);
+    const media={type:'audio',origin:'web',...details};
+    if(receipt) {
+      if(receipt.actor_id!==actor||receipt.fingerprint!==messageFingerprint('',media)) return reply(res,409,{error:'Ese identificador ya se utilizó con otro mensaje.'});
+      const transcript=receipt.media?.transcript||receipt.media?.transcribed_text||'';
+      const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text:transcript||'[Audio sin voz inteligible]',media:{...media,...receipt.media}});
+      return reply(res,200,{...result,transcript});
+    }
+    if(!await store.quota(actor)) return reply(res,429,{error:'Demasiados mensajes. Intenta de nuevo en un minuto.'});
+    const transcription=await transcriber(bytes,{mime:details.mime,key:env.GEMINI_API_KEY,model:env.GEMINI_TRANSCRIBE_MODEL||env.GEMINI_MODEL||'gemini-3.5-flash-lite',fetcher});
+    const transcript=typeof transcription?.text==='string'?transcription.text.trim():'';
+    if(transcript.length>4000) return reply(res,422,{error:'La transcripción es demasiado larga.'});
+    const fullMedia={...media,transcribed:true,transcript,transcription_provider:transcription.provider||'gemini',transcription_model:transcription.model||null,ambiguous:!transcript||multipleVoiceOperations(transcript)};
+    const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text:transcript||'[Audio sin voz inteligible]',media:fullMedia,quotaConsumed:true});
+    return reply(res,200,{...result,transcript});
    }
    return reply(res,404,{error:'Ruta no encontrada.'});
   } catch(error) {

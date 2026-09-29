@@ -24,7 +24,7 @@ export class SupabaseStore {
     return memberships.map(m=>m.businesses);
   }
   async receipt(business,channel,id) {
-    const rows=await this.request(`messages?business_id=eq.${encodeURIComponent(business)}&channel=eq.${channel}&external_id=eq.${encodeURIComponent(id)}&select=id,actor_id,fingerprint,response`);
+    const rows=await this.request(`messages?business_id=eq.${encodeURIComponent(business)}&channel=eq.${channel}&external_id=eq.${encodeURIComponent(id)}&select=id,actor_id,fingerprint,response,media`);
     return rows[0];
   }
   process(args) {return this.rpc('process_command',args);}

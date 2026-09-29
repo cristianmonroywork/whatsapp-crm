@@ -1,6 +1,24 @@
 {
-  "name": "cuenta-clara-mvp", "version": "0.1.0", "private": true, "type": "module",
-  "engines": {"node": ">=22"},
-  "scripts": {"dev": "node --env-file-if-exists=.env.local scripts/server.js", "test": "node --test test/*.test.js", "test:gemini": "node --env-file=.env.local scripts/smoke-gemini.js", "test:live": "node --env-file=.env.local scripts/smoke-live.js", "test:deployment": "node --env-file=.env.local scripts/smoke-deployment.js", "check": "node scripts/check.js"},
-  "devDependencies": {"@electric-sql/pglite": "0.3.14"}
+  "name": "cuenta-clara-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env.local scripts/server.js",
+    "test": "node --test test/*.test.js",
+    "test:gemini": "node --env-file=.env.local scripts/smoke-gemini.js",
+    "test:live": "node --env-file=.env.local scripts/smoke-live.js",
+    "test:voice-live": "node --env-file=.env.local scripts/smoke-voice-live.js",
+    "test:deployment": "node --env-file=.env.local scripts/smoke-deployment.js",
+    "check": "node scripts/check.js"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14"
+  },
+  "dependencies": {
+    "music-metadata": "^11.16.1"
+  }
 }

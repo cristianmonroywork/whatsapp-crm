@@ -1,8 +1,8 @@
-# Cuenta Clara — MVP Sprint 1.5
+# Cuenta Clara — MVP Sprint 3
 
 Asistente de cuentas para micronegocios en México. Canal previsto: WhatsApp; incluye un chat pequeño para probar el mismo servicio. Proyecto nuevo e independiente, sin vínculo a recursos ni proyectos de otros clientes.
 
-**Estado de entrega:** aplicación, API, migración y pruebas implementadas. El flujo «Vendí 3 playeras en $900» → guardar → «¿cuánto vendí hoy?» → **$900.00 MXN** está verificado con PostgreSQL local y el intérprete de demostración. El adaptador de interpretación ya usa Gemini Structured Outputs. Los adaptadores remotos tienen pruebas simuladas; la validación real requiere configurar los recursos nuevos y exclusivos de Cuenta Clara. No confundir la demo con esa validación pendiente.
+**Estado:** texto en producción con Supabase y Gemini; Sprint 3 añade notas de voz desde la web/PWA. La integración Meta sigue pendiente y fuera de este sprint.
 
 ## Probar ahora
 
@@ -53,10 +53,12 @@ WhatsApp (firma HMAC + remitente vinculado)   Chat (Supabase Auth)
 - `src/interpret.js`: contrato JSON, prompt e integración con Gemini; intérprete local separado.
 - `src/domain.js`: importes, validación, confirmación literal y respuestas. La IA no emite códigos de confirmación ni consulta la BD.
 - `src/service.js`: flujo común entre canales; verifica membresía antes de consultar recibos o interpretar.
-- `src/store.js`: acceso servidor a Supabase REST/RPC. Cero dependencias de ejecución en producción: usa `fetch` nativo.
+- `src/store.js`: acceso servidor a Supabase REST/RPC.
+- `src/voice.js`: validación de bytes, formato y duración; adaptador de transcripción Gemini separado del intérprete financiero.
 - `supabase/migrations/001_initial.sql`: reglas financieras y transacciones.
 - `src/whatsapp.js`: validación HMAC, procesamiento de todos los mensajes del lote, envío y reintentos con outbox.
 - `api/index.js`: sesiones, chat y webhook. No expone claves del servidor.
+- `api/audio`: acepta un archivo binario autenticado, comprueba membresía e idempotencia y entrega sólo su transcripción al servicio común.
 - `public/`: chat accesible y adaptable; sin inventario ni CRM visual.
 - `scripts/local-store.js`: sólo desarrollo y pruebas; misma migración SQL con sustitutos locales de los roles/Auth de Supabase.
 
@@ -106,6 +108,7 @@ La `service_role` es **sólo servidor**. Nunca uses prefijos públicos ni la peg
 | `SUPABASE_SERVICE_ROLE_KEY` | Clave de servicio del proyecto; acceso exclusivo del servidor. |
 | `GEMINI_API_KEY` | Clave del proyecto Gemini para este piloto. |
 | `GEMINI_MODEL` | Modelo con Structured Outputs; valor inicial `gemini-3.5-flash-lite`, modificable. |
+| `GEMINI_TRANSCRIBE_MODEL` | Opcional: modelo Gemini para transcribir audio; por defecto usa `GEMINI_MODEL`. No requiere otra clave. |
 | `PORT` | Puerto local; 3000 por defecto. |
 | `NODEJS_HELPERS` | `0` en Vercel, incluido en `vercel.json`; verificar también la configuración del proyecto. |
 | `WHATSAPP_ENABLED` | `false` hasta completar configuración y prueba con Meta. |
@@ -170,9 +173,25 @@ La recepción verifica HMAC del cuerpo original, ignora estados de entrega como 
 
 **Entrega y límites:** operaciones financieras y respuestas se guardan juntas en una transacción. El outbox se crea después y se recupera al reintentar el mismo webhook. Una lease evita envíos simultáneos; si Meta acepta un envío pero la confirmación se pierde, podría repetirse el **texto**, nunca el movimiento. No se promete entrega exactamente una vez a un servicio externo. El piloto procesa sincrónicamente dentro del límite de Vercel; antes de escalar, añadir cola de entrada persistente, worker y recuperación programada de outbox. No hay cron ni worker duradero en este sprint. Los reintentos de Meta son finitos; monitorizar filas pendientes durante el piloto.
 
-## Notas de voz preparadas
+## Notas de voz en la web/PWA
 
-`messages.media` conserva tipo e identificador de medio; el servicio acepta texto transcrito con su procedencia. Audio entrante sin transcripción no genera movimientos. Próximo adaptador: descargar desde Meta en servidor, validar MIME/tamaño/duración, transcribir, registrar procedencia y pasar el texto por **el mismo** intérprete, validación y transacción. No se incluye captura, descarga ni transcripción de audio en este sprint.
+El usuario pulsa **Grabar**, **Detener**, escucha la nota y puede **Cancelar** o **Enviar audio**. También puede subir un archivo. El navegador solicita permiso de micrófono; en móviles se requiere HTTPS (o localhost). La interfaz limita la grabación a 59 segundos para dejar margen al límite del servidor. Una nota debe contener una sola operación.
+
+```text
+Micrófono / archivo → API autenticada → validación real de audio → Gemini transcriptor
+→ transcripción visible → mismo intérprete Gemini de texto → validación financiera
+→ misma transacción Supabase → respuesta visible
+```
+
+Gemini se usa para transcripción porque acepta audio pequeño en línea y la clave/modelo ya pertenecen al proyecto aislado. La llamada de transcripción tiene un adaptador independiente (`src/voice.js`) que puede sustituirse sin tocar la lógica financiera. El transcriptor no recibe saldos ni acceso a Supabase; sólo devuelve palabras. El intérprete tampoco escribe en la base. Los totales, centavos, fechas y confirmaciones siguen en código/SQL. Se eligió audio en línea para evitar una subida persistente al proveedor.
+
+El servidor acepta WAV, WebM, OGG, MP3 y M4A/MP4. Comprueba MIME, firma del archivo y metadatos de duración; rechaza archivos vacíos, ilegibles, con video, mayores de **3,000,000 bytes** o **60 segundos**. El límite de 3 MB deja margen para la codificación Base64 dentro del máximo de cuerpo de Vercel. Una transcripción vacía, ambigua o con varias operaciones responde pidiendo un solo mensaje claro y no crea un movimiento. Las correcciones y anulaciones habladas conservan el código de confirmación actual.
+
+El audio sólo vive en memoria durante la petición y se descarta al terminar; no se guarda en Storage, tablas, logs ni repositorio. En Supabase se conservan `messages.content` (transcripción), `messages.media` (tipo audio, origen web, transcripción, MIME, tamaño, duración, códec, hash SHA-256 y modelo/proveedor), actor, negocio, fecha, respuesta e ID interno. `movements.source_message_id` y `movement_audit.message_id` vinculan el movimiento y las correcciones. Gemini recibe temporalmente el audio conforme a la configuración de datos del proveedor. El navegador mantiene la vista previa local sólo hasta enviar o cancelar; una petición fallida la conserva para reintentar con el mismo identificador.
+
+Para probar sin escribir en Supabase: `npm test` cubre el endpoint con PostgreSQL local y un transcriptor simulado; `npm run check` revisa sintaxis. En modo `live`, inicia sesión en la web, graba “Gasté 350 pesos de gasolina”, escucha y envía. Debe aparecer “Escuché: …” seguido del gasto de $350. Revisa `messages`, `movements` y `movement_audit` en el proyecto Supabase exclusivo de Cuenta Clara. La prueba controlada `npm run test:voice-live` usa un audio sintético temporal en `/private/tmp/cuenta-clara-sprint3.wav`, exige confirmar el proyecto Supabase `vixbjjjeewcjawwemvnx` y el negocio piloto mediante las variables existentes, y registra un gasto real de $350 antes de revisar auditoría e idempotencia. El intérprete demo sigue separado y sólo entiende los ejemplos de texto limitados; la transcripción de voz real requiere `GEMINI_API_KEY` incluso en desarrollo.
+
+Limitaciones: no hay división de varias operaciones, edición de la transcripción antes de enviarla, guardado de audio ni procesamiento de voz por WhatsApp. Si el proveedor de transcripción falla, no se escribe un mensaje financiero y puede reintentarse con el mismo ID.
 
 ## Pruebas y límites de verificación
 
@@ -183,6 +202,8 @@ Ver [docs/VALIDACION.md](docs/VALIDACION.md) y [docs/ARQUITECTURA.md](docs/ARQUI
 ## Referencias de implementación
 
 - [Gemini: Structured Outputs](https://ai.google.dev/gemini-api/docs/generate-content/structured-output): contrato de salida JSON Schema en Generate Content.
+- [Gemini: audio](https://ai.google.dev/gemini-api/docs/generate-content/audio): audio en línea para transcripción.
+- [Vercel: límites de funciones](https://vercel.com/docs/functions/limitations): tamaño máximo del cuerpo HTTP.
 - [Supabase: Database Functions](https://supabase.com/docs/guides/database/functions): funciones Postgres y permisos.
 - [Vercel: Node.js avanzado](https://vercel.com/docs/functions/runtimes/node-js/advanced-node-configuration): función Node y desactivación de helpers para cuerpo original.
 - [Meta: verificación de webhooks en su SDK](https://whatsapp.github.io/WhatsApp-Nodejs-SDK/api-reference/webhooks/start/): firma y handshake. Se usa HTTP directo; no se depende del SDK archivado.
