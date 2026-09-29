@@ -10,6 +10,8 @@
     "dev": "node --env-file-if-exists=.env.local scripts/server.js",
     "test": "node --test test/*.test.js",
     "test:gemini": "node --env-file=.env.local scripts/smoke-gemini.js",
+    "test:batch-gemini": "node --env-file=.env.local scripts/smoke-batch-gemini.js",
+    "test:batch-live": "node --env-file=.env.local scripts/smoke-batch-live.js",
     "test:live": "node --env-file=.env.local scripts/smoke-live.js",
     "test:voice-live": "node --env-file=.env.local scripts/smoke-voice-live.js",
     "test:deployment": "node --env-file=.env.local scripts/smoke-deployment.js",

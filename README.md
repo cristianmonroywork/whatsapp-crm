@@ -1,8 +1,8 @@
-# Cuenta Clara — MVP Sprint 3
+# Cuenta Clara — MVP Sprint 4
 
 Asistente de cuentas para micronegocios en México. Canal previsto: WhatsApp; incluye un chat pequeño para probar el mismo servicio. Proyecto nuevo e independiente, sin vínculo a recursos ni proyectos de otros clientes.
 
-**Estado:** texto en producción con Supabase y Gemini; Sprint 3 añade notas de voz desde la web/PWA. La integración Meta sigue pendiente y fuera de este sprint.
+**Estado:** texto y notas de voz usan el mismo servicio financiero; Sprint 4 permite registrar varias operaciones de un mensaje como un lote. La integración Meta sigue pendiente y fuera de este sprint.
 
 ## Probar ahora
 
@@ -42,10 +42,10 @@ WhatsApp (firma HMAC + remitente vinculado)   Chat (Supabase Auth)
                                |
           Gemini Generate Content → intención + datos estructurados
                                |
-             Validación y conversión exacta a centavos (JS)
+       Lista ordenada → validación y centavos exactos (JS)
                                |
-        Supabase RPC: transacción, bloqueo por negocio, SQL
-            mensajes + movimientos + auditoría + respuesta
+     Supabase RPC: una transacción y bloqueo por negocio
+       un mensaje + movimientos + auditorías + respuesta
                                |
                  Texto determinista → chat / Meta
 ```
@@ -55,7 +55,7 @@ WhatsApp (firma HMAC + remitente vinculado)   Chat (Supabase Auth)
 - `src/service.js`: flujo común entre canales; verifica membresía antes de consultar recibos o interpretar.
 - `src/store.js`: acceso servidor a Supabase REST/RPC.
 - `src/voice.js`: validación de bytes, formato y duración; adaptador de transcripción Gemini separado del intérprete financiero.
-- `supabase/migrations/001_initial.sql`: reglas financieras y transacciones.
+- `supabase/migrations/001_initial.sql`: reglas financieras originales; `002_batches.sql`: RPC transaccional para lotes y protección de correcciones.
 - `src/whatsapp.js`: validación HMAC, procesamiento de todos los mensajes del lote, envío y reintentos con outbox.
 - `api/index.js`: sesiones, chat y webhook. No expone claves del servidor.
 - `api/audio`: acepta un archivo binario autenticado, comprueba membresía e idempotencia y entrega sólo su transcripción al servicio común.
@@ -70,25 +70,29 @@ Vercel publica archivos estáticos y una función Node. `NODEJS_HELPERS=0` prese
 |---|---|
 | Dinero | MXN, entero en centavos, positivo; máximo $1,000,000,000 por movimiento. Sin `float` para sumar dinero. |
 | Precio unitario | IA devuelve precio y cantidad por separado; JS multiplica centavos enteros. “3 playeras en $900” son **$900 en total**. |
+| Lotes | De 2 a 8 operaciones claras por mensaje. Si una es ambigua o inválida, no se registra ninguna; se pide aclaración. Un mensaje tiene un solo identificador idempotente. |
 | Ventas / gastos | Se registran por separado. El resumen no se presenta como utilidad neta ni contabilidad fiscal. |
 | Cuentas por cobrar | `Pedro me debe $600` abre una deuda; **no crea una venta**. |
 | Pagos | Reducen una cuenta abierta, no aumentan las ventas. No se acepta sobrepago. |
+| Venta fiada | Venta y cuenta por cobrar son dos movimientos del mismo lote. Un abono recibido al vender se guarda como componente de esa venta; no se aplica de nuevo como pago a la deuda. |
 | Cliente | Coincidencia por nombre normalizado exacto, sin distinguir mayúsculas; sin coincidencia difusa. Usar nombres distintivos para homónimos. |
 | Varias deudas del mismo cliente | El pago se rechaza con explicación si no identifica una única cuenta abierta. Selección de cuenta o distribución de pagos queda para otro sprint. |
 | Fechas | `today`/`yesterday` se calculan en SQL con la zona IANA del negocio. Fechas explícitas pasan validación; futuras no soportadas. Semana empieza lunes. |
 | Último movimiento | Último no anulado del **usuario actual dentro del negocio**, por secuencia de registro. No “último de todos los usuarios”. |
-| Correcciones | Sólo importe del último movimiento; primero se fija ID, versión, importe anterior y nuevo. Código por usuario/canal; caduca en 10 minutos. |
+| Correcciones | Sólo importe del último movimiento de un mensaje individual; primero se fija ID, versión, importe anterior y nuevo. Si el último movimiento pertenece a un lote, se pide identificar la operación. Código por usuario/canal; caduca en 10 minutos. |
 | Anulaciones | Siempre confirmadas, nunca borrado físico. Una cuenta con pagos no se anula ni se reduce por debajo de lo pagado. |
 | Confirmación | Sólo `CONFIRMAR <código>` exacto o `CANCELAR`; “sí” no autoriza una mutación. Una petición nueva reemplaza la anterior del mismo canal. |
-| Ambigüedad | Sin importe, varios movimientos, venta + fiado/pago combinados, moneda distinta o fecha no soportada → pedir reformular, sin movimiento. |
+| Ambigüedad | Importes aproximados, referencias vagas, componentes incompatibles, moneda distinta o fecha no soportada → pedir reformular; ningún movimiento del lote se guarda. |
 | Historial | Mensaje original, comando normalizado, respuesta, actor, origen y snapshots antes/después. No se usa memoria del modelo como registro. |
 
-Para una venta fiada en este sprint, registrar la venta y la deuda en **dos mensajes explícitos**. Un pago posterior sólo abona a la deuda. La app no conoce el efectivo recibido por una venta si no se registra una cuenta; el total de ventas no debe interpretarse como caja. No hay inventarios, SAT, facturas, empleados, recordatorios automáticos ni reportes de utilidad.
+El contrato de Gemini es `{ambiguous, operations}`. Cada operación conserva `kind`, importe expresado o `quantity` y `unit_price`, fecha relativa y contacto cuando aplican. `sale_ref` enlaza una deuda con la posición de su venta en la lista; `upfront_paid` conserva un pago inicial explícito. Gemini sólo extrae datos: JS valida cada operación y calcula cantidad × precio en centavos; SQL decide saldos, fechas definitivas y mutaciones. La respuesta se compone en código, no en Gemini. Cada movimiento guarda `source_message_id` y tiene su propia fila de `movement_audit`. Un reintento con el mismo ID devuelve el recibo sin repetir el lote.
+
+Ejemplos: “Vendí 3 playeras en $900 y gasté $200 de gasolina”; “Ayer vendí $2,500, hoy llevo $1,800”; “Luis me debe $700 y Pedro $400”; “Vendí dos pantalones de $600 cada uno y una chamarra de $900”. “Le vendí a Pedro $600 y me lo quedó a deber” crea una venta y una deuda por $600. “Le vendí a Juan $1,000, me pagó $400 y me debe $600” crea una venta de $1,000 y una deuda de $600, con $400 de pago inicial anotado en la interpretación; no crea una segunda venta ni descuenta dos veces la deuda. El total de ventas no debe interpretarse como caja. No hay inventarios, SAT, facturas, empleados, recordatorios automáticos ni reportes de utilidad.
 
 ## Configurar Supabase nuevo
 
 1. Identifica por nombre e ID el **proyecto Supabase nuevo y exclusivo de Cuenta Clara**. Verifica su cuenta antes de ejecutar SQL. No selecciones uno existente de clientes o producción.
-2. En su SQL Editor ejecuta una sola vez `supabase/migrations/001_initial.sql`. Está diseñada para proyecto vacío; no modifica esquemas preexistentes de clientes.
+2. En un proyecto vacío ejecuta en orden `supabase/migrations/001_initial.sql` y `supabase/migrations/002_batches.sql`. Si ya se completaron Sprints 1–3, ejecuta **sólo** `002_batches.sql` una vez. Verifica la referencia del proyecto antes de ejecutar SQL.
 3. En Authentication crea un usuario de piloto con correo y contraseña; para prueba usa una cuenta confirmada. El alta pública no forma parte de esta app.
 4. Copia su UUID y ejecuta `supabase/onboard.example.sql` tras sustituir el marcador. Genera un negocio nuevo y su membresía. Conserva el UUID mostrado.
 5. Copia `.env.example` a `.env.local`; configura `APP_MODE=live`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY` y `GEMINI_MODEL`.
@@ -110,6 +114,7 @@ La `service_role` es **sólo servidor**. Nunca uses prefijos públicos ni la peg
 | `GEMINI_MODEL` | Modelo con Structured Outputs; valor inicial `gemini-3.5-flash-lite`, modificable. |
 | `GEMINI_TRANSCRIBE_MODEL` | Opcional: modelo Gemini para transcribir audio; por defecto usa `GEMINI_MODEL`. No requiere otra clave. |
 | `VOICE_SMOKE_FILE` | Sólo prueba local real: ruta del audio temporal con “Gasté trescientos cincuenta pesos de gasolina”. |
+| `VOICE_BATCH_SMOKE_FILE` | Opcional para `test:batch-live`: WAV temporal con dos operaciones claras. No se conserva. |
 | `PORT` | Puerto local; 3000 por defecto. |
 | `NODEJS_HELPERS` | `0` en Vercel, incluido en `vercel.json`; verificar también la configuración del proyecto. |
 | `WHATSAPP_ENABLED` | `false` hasta completar configuración y prueba con Meta. |
@@ -133,15 +138,17 @@ Con `GEMINI_API_KEY` configurada en `.env.local`, verifica primero la interpreta
 
 ```sh
 npm run test:gemini
+npm run test:batch-gemini
 ```
 
 Con la migración y las demás variables configuradas en el proyecto Supabase aislado:
 
 ```sh
 npm run test:live
+npm run test:batch-live
 ```
 
-La prueba **crea un negocio de prueba nuevo** para `TEST_USER_ID`, conserva sus datos para inspección y verifica Gemini → Supabase → consulta de $900 y reintento sin duplicación. Consulta directamente `messages`, `movements` y `movement_audit` antes de declarar éxito. No borra ni limpia libros existentes. `SUPABASE_PROJECT_REF_CONFIRM` debe coincidir con el host de `SUPABASE_URL`.
+La prueba `test:batch-gemini` comprueba las ocho frases válidas y cuatro ambiguas de Sprint 4 sin escribir en Supabase. `test:live` conserva el flujo original de $900. `test:batch-live` **crea un negocio de prueba nuevo** para `TEST_USER_ID`, registra el ejemplo de venta, gasto y deuda, consulta $2,600 vendidos hoy, verifica reintento y rollback, e inspecciona directamente `messages`, `movements` y `movement_audit`. Si se indica `VOICE_BATCH_SMOKE_FILE`, también transcribe el WAV con Gemini y registra su lote desde el endpoint de audio local. Los negocios de prueba se conservan para inspección. `SUPABASE_PROJECT_REF_CONFIRM` debe coincidir con el host de `SUPABASE_URL`.
 
 Para publicar:
 
@@ -176,7 +183,7 @@ La recepción verifica HMAC del cuerpo original, ignora estados de entrega como 
 
 ## Notas de voz en la web/PWA
 
-El usuario pulsa **Grabar**, **Detener**, escucha la nota y puede **Cancelar** o **Enviar audio**. También puede subir un archivo. El navegador solicita permiso de micrófono; en móviles se requiere HTTPS (o localhost). La interfaz limita la grabación a 59 segundos para dejar margen al límite del servidor. Una nota debe contener una sola operación.
+El usuario pulsa **Grabar**, **Detener**, escucha la nota y puede **Cancelar** o **Enviar audio**. También puede subir un archivo. El navegador solicita permiso de micrófono; en móviles se requiere HTTPS (o localhost). La interfaz limita la grabación a 59 segundos para dejar margen al límite del servidor. Una nota puede contener varias operaciones claras.
 
 ```text
 Micrófono / archivo → API autenticada → validación real de audio → Gemini transcriptor
@@ -186,7 +193,7 @@ Micrófono / archivo → API autenticada → validación real de audio → Gemin
 
 Gemini se usa para transcripción porque acepta audio pequeño en línea y la clave/modelo ya pertenecen al proyecto aislado. La llamada de transcripción tiene un adaptador independiente (`src/voice.js`) que puede sustituirse sin tocar la lógica financiera. El transcriptor no recibe saldos ni acceso a Supabase; sólo devuelve palabras. El intérprete tampoco escribe en la base. Los totales, centavos, fechas y confirmaciones siguen en código/SQL. Se eligió audio en línea para evitar una subida persistente al proveedor.
 
-El servidor acepta WAV, WebM, OGG, MP3 y M4A/MP4. Comprueba MIME, firma del archivo y metadatos de duración; rechaza archivos vacíos, ilegibles, con video, mayores de **3,000,000 bytes** o **60 segundos**. El límite de 3 MB deja margen para la codificación Base64 dentro del máximo de cuerpo de Vercel. Una transcripción vacía, ambigua o con varias operaciones responde pidiendo un solo mensaje claro y no crea un movimiento. Las correcciones y anulaciones habladas conservan el código de confirmación actual.
+El servidor acepta WAV, WebM, OGG, MP3 y M4A/MP4. Comprueba MIME, firma del archivo y metadatos de duración; rechaza archivos vacíos, ilegibles, con video, mayores de **3,000,000 bytes** o **60 segundos**. El límite de 3 MB deja margen para la codificación Base64 dentro del máximo de cuerpo de Vercel. Una transcripción vacía o un lote ambiguo no crea movimientos. Las correcciones y anulaciones habladas conservan el código de confirmación actual.
 
 El audio sólo vive en memoria durante la petición y se descarta al terminar; no se guarda en Storage, tablas, logs ni repositorio. En Supabase se conservan `messages.content` (transcripción), `messages.media` (tipo audio, origen web, transcripción, MIME, tamaño, duración, códec, hash SHA-256 y modelo/proveedor), actor, negocio, fecha, respuesta e ID interno. `movements.source_message_id` y `movement_audit.message_id` vinculan el movimiento y las correcciones. Gemini recibe temporalmente el audio conforme a la configuración de datos del proveedor. El navegador mantiene la vista previa local sólo hasta enviar o cancelar; una petición fallida la conserva para reintentar con el mismo identificador.
 
@@ -201,11 +208,11 @@ rm /private/tmp/cuenta-clara-sprint3.aiff /private/tmp/cuenta-clara-sprint3.wav
 
 El intérprete demo sigue separado y sólo entiende los ejemplos de texto limitados; la transcripción de voz real requiere `GEMINI_API_KEY` incluso en desarrollo.
 
-Limitaciones: no hay división de varias operaciones, edición de la transcripción antes de enviarla, guardado de audio ni procesamiento de voz por WhatsApp. Si el proveedor de transcripción falla, no se escribe un mensaje financiero y puede reintentarse con el mismo ID.
+Limitaciones: no hay edición de la transcripción antes de enviarla, guardado de audio ni procesamiento de voz por WhatsApp. Si el proveedor de transcripción falla, no se escribe un mensaje financiero y puede reintentarse con el mismo ID.
 
 ## Pruebas y límites de verificación
 
-`npm test` ejecuta PostgreSQL local real vía PGlite, no un ledger falso de objetos JS: migración, reglas, SQL y RLS. Prueba ventas/gastos, centavos, consulta, edición/anulación, pagos, sobrepago, duplicados, aislamiento, permisos, fechas, códigos, rollback, adaptadores y HTTP. Las peticiones concurrentes se prueban sobre una instancia local; PGlite serializa su conexión, así que no sustituye una prueba de carga multiconexión en Supabase. El bloqueo `FOR UPDATE` por negocio implementa la exclusión en PostgreSQL servidor.
+`npm test` ejecuta PostgreSQL local real vía PGlite, no un ledger falso de objetos JS: ambas migraciones, reglas, SQL y RLS. Cubre ventas/gastos, consultas, correcciones, pagos, aislamiento, audio y, para lotes, tipos mezclados, varias ventas/deudas, fiado, abono inicial, cantidad × precio, fechas distintas, operación inválida o ambigua, rollback, idempotencia y auditoría individual. Las peticiones concurrentes se prueban sobre una instancia local; PGlite serializa su conexión, así que no sustituye una prueba de carga multiconexión en Supabase. El bloqueo `FOR UPDATE` por negocio implementa la exclusión en PostgreSQL servidor.
 
 Ver [docs/VALIDACION.md](docs/VALIDACION.md) y [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md). Un fallo de Gemini nunca cambia silenciosamente al intérprete demo.
 

@@ -28,6 +28,7 @@ export class SupabaseStore {
     return rows[0];
   }
   process(args) {return this.rpc('process_command',args);}
+  batch(args) {return this.rpc('process_batch',args);}
   quota(actor) {return this.rpc('consume_quota',{p_actor:actor});}
   async binding(phone,sender) {
     const rows=await this.request(`channel_bindings?channel=eq.whatsapp&phone_number_id=eq.${encodeURIComponent(phone)}&sender_id=eq.${encodeURIComponent(sender)}&select=business_id,user_id`);

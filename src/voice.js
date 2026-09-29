@@ -86,8 +86,3 @@ export async function transcribeAudio(bytes,{mime,key=process.env.GEMINI_API_KEY
   if(text.length>4000) throw fail('La transcripción es demasiado larga.',422);
   return {text,provider:'gemini',model};
 }
-
-export function multipleVoiceOperations(text) {
-  const verbs=text.toLocaleLowerCase('es-MX').match(/(?:vend[ií]|saqu[eé][^.!?]{0,40}venta|gast[eé]|compr[eé]|me debe|me pag[oó]|cobr[eé]|recib[ií] un pago)/g);
-  return (verbs?.length||0)>1;
-}

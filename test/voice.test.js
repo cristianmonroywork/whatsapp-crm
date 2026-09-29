@@ -5,7 +5,7 @@ import {createServer} from 'node:http';
 import {createLocalStore,DEMO_USER as actor,DEMO_BUSINESS as business} from '../scripts/local-store.js';
 import {createHandler} from '../api/index.js';
 import {base} from '../src/interpret.js';
-import {validateAudio,transcribeAudio,multipleVoiceOperations,webmDurationSeconds} from '../src/voice.js';
+import {validateAudio,transcribeAudio,webmDurationSeconds} from '../src/voice.js';
 
 let store;
 before(async()=>{store=await createLocalStore();});
@@ -45,13 +45,12 @@ test('empty, invalid, oversized and overlong audio are rejected before transcrip
   assert.equal(calls,0);assert.equal(await count('movements'),0);
  }finally{await new Promise(done=>server.close(done));}
 });
-test('ambiguous or multiple operations make no movement; provider errors are retryable',async()=>{
+test('insufficient transcription makes no movement; provider errors are retryable',async()=>{
  let transcript='';let fail=false;const {server,url}=await serverFor(async()=>{if(fail)throw Object.assign(new Error('provider unavailable'),{status:503});return {text:transcript};});
  try{
-  for(const phrase of ['', 'Vendí algo', 'Vendí 900 y gasté 300']){transcript=phrase;const result=await (await post(url)).json();assert.equal(result.status,'clarify');if(phrase.includes(' y '))assert.match(result.text,/Envíalas por separado/);}
-  assert.equal(multipleVoiceOperations('Vendí 900 y gasté 300'),true);
+  for(const phrase of ['', 'Vendí algo']){transcript=phrase;const result=await (await post(url)).json();assert.equal(result.status,'clarify');}
   assert.equal(await count('movements'),0);
-  fail=true;const id=randomUUID();assert.equal((await post(url,wav(),id)).status,503);assert.equal(await count('messages'),3);
+  fail=true;const id=randomUUID();assert.equal((await post(url,wav(),id)).status,503);assert.equal(await count('messages'),2);
   fail=false;transcript='Vendí novecientos pesos.';assert.equal((await post(url,wav(),id)).status,200);assert.equal(await count('movements'),1);
  }finally{await new Promise(done=>server.close(done));}
 });

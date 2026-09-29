@@ -1,7 +1,7 @@
 import {SupabaseStore} from '../src/store.js';
 import {interpret} from '../src/interpret.js';
 import {handleMessage,messageFingerprint} from '../src/service.js';
-import {MAX_AUDIO_BYTES,validateAudio,transcribeAudio,multipleVoiceOperations} from '../src/voice.js';
+import {MAX_AUDIO_BYTES,validateAudio,transcribeAudio} from '../src/voice.js';
 import {validSignature,receiveWhatsApp} from '../src/whatsapp.js';
 
 export async function readBody(req,limit=65536) {
@@ -79,8 +79,7 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
     const transcription=await transcriber(bytes,{mime:details.mime,key:env.GEMINI_API_KEY,model:env.GEMINI_TRANSCRIBE_MODEL||env.GEMINI_MODEL||'gemini-3.5-flash-lite',fetcher});
     const transcript=typeof transcription?.text==='string'?transcription.text.trim():'';
     if(transcript.length>4000) return reply(res,422,{error:'La transcripción es demasiado larga.'});
-    const multiple=multipleVoiceOperations(transcript);
-    const fullMedia={...media,transcribed:true,transcript,transcription_provider:transcription.provider||'gemini',transcription_model:transcription.model||null,ambiguous:!transcript||multiple,multiple_operations:multiple};
+    const fullMedia={...media,transcribed:true,transcript,transcription_provider:transcription.provider||'gemini',transcription_model:transcription.model||null,ambiguous:!transcript};
     const result=await handleMessage({store,interpreter,business:businessId,actor,channel:'web',externalId:id,text:transcript||'[Audio sin voz inteligible]',media:fullMedia,quotaConsumed:true});
     return reply(res,200,{...result,transcript});
    }
