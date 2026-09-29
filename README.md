@@ -109,6 +109,7 @@ La `service_role` es **sólo servidor**. Nunca uses prefijos públicos ni la peg
 | `GEMINI_API_KEY` | Clave del proyecto Gemini para este piloto. |
 | `GEMINI_MODEL` | Modelo con Structured Outputs; valor inicial `gemini-3.5-flash-lite`, modificable. |
 | `GEMINI_TRANSCRIBE_MODEL` | Opcional: modelo Gemini para transcribir audio; por defecto usa `GEMINI_MODEL`. No requiere otra clave. |
+| `VOICE_SMOKE_FILE` | Sólo prueba local real: ruta del audio temporal con “Gasté trescientos cincuenta pesos de gasolina”. |
 | `PORT` | Puerto local; 3000 por defecto. |
 | `NODEJS_HELPERS` | `0` en Vercel, incluido en `vercel.json`; verificar también la configuración del proyecto. |
 | `WHATSAPP_ENABLED` | `false` hasta completar configuración y prueba con Meta. |
@@ -189,7 +190,16 @@ El servidor acepta WAV, WebM, OGG, MP3 y M4A/MP4. Comprueba MIME, firma del arch
 
 El audio sólo vive en memoria durante la petición y se descarta al terminar; no se guarda en Storage, tablas, logs ni repositorio. En Supabase se conservan `messages.content` (transcripción), `messages.media` (tipo audio, origen web, transcripción, MIME, tamaño, duración, códec, hash SHA-256 y modelo/proveedor), actor, negocio, fecha, respuesta e ID interno. `movements.source_message_id` y `movement_audit.message_id` vinculan el movimiento y las correcciones. Gemini recibe temporalmente el audio conforme a la configuración de datos del proveedor. El navegador mantiene la vista previa local sólo hasta enviar o cancelar; una petición fallida la conserva para reintentar con el mismo identificador.
 
-Para probar sin escribir en Supabase: `npm test` cubre el endpoint con PostgreSQL local y un transcriptor simulado; `npm run check` revisa sintaxis. En modo `live`, inicia sesión en la web, graba “Gasté 350 pesos de gasolina”, escucha y envía. Debe aparecer “Escuché: …” seguido del gasto de $350. Revisa `messages`, `movements` y `movement_audit` en el proyecto Supabase exclusivo de Cuenta Clara. La prueba controlada `npm run test:voice-live` usa un audio sintético temporal en `/private/tmp/cuenta-clara-sprint3.wav`, exige confirmar el proyecto Supabase `vixbjjjeewcjawwemvnx` y el negocio piloto mediante las variables existentes, y registra un gasto real de $350 antes de revisar auditoría e idempotencia. El intérprete demo sigue separado y sólo entiende los ejemplos de texto limitados; la transcripción de voz real requiere `GEMINI_API_KEY` incluso en desarrollo.
+Para probar sin escribir en Supabase: `npm test` cubre el endpoint con PostgreSQL local y un transcriptor simulado; `npm run check` revisa sintaxis. En modo `live`, inicia sesión en la web, graba “Gasté 350 pesos de gasolina”, escucha y envía. Debe aparecer “Escuché: …” seguido del gasto de $350. Revisa `messages`, `movements` y `movement_audit` en el proyecto Supabase exclusivo de Cuenta Clara. La prueba controlada `npm run test:voice-live` recibe un archivo local mediante `VOICE_SMOKE_FILE` con la frase “Gasté trescientos cincuenta pesos de gasolina”; exige confirmar el proyecto Supabase `vixbjjjeewcjawwemvnx` y el negocio piloto mediante las variables existentes, y registra un gasto real de $350 antes de revisar auditoría e idempotencia. En macOS se puede generar un ejemplo temporal así:
+
+```sh
+say -v Paulina -o /private/tmp/cuenta-clara-sprint3.aiff 'Gasté trescientos cincuenta pesos de gasolina'
+afconvert -f WAVE -d LEI16@16000 /private/tmp/cuenta-clara-sprint3.aiff /private/tmp/cuenta-clara-sprint3.wav
+VOICE_SMOKE_FILE=/private/tmp/cuenta-clara-sprint3.wav npm run test:voice-live
+rm /private/tmp/cuenta-clara-sprint3.aiff /private/tmp/cuenta-clara-sprint3.wav
+```
+
+El intérprete demo sigue separado y sólo entiende los ejemplos de texto limitados; la transcripción de voz real requiere `GEMINI_API_KEY` incluso en desarrollo.
 
 Limitaciones: no hay división de varias operaciones, edición de la transcripción antes de enviarla, guardado de audio ni procesamiento de voz por WhatsApp. Si el proveedor de transcripción falla, no se escribe un mensaje financiero y puede reintentarse con el mismo ID.
 
