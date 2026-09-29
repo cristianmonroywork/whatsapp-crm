@@ -11,7 +11,7 @@ async function session() {
   const data=await api('session');businesses=data.businesses;$('business').replaceChildren();
   businesses.forEach(b=>{const o=document.createElement('option');o.value=b.id;o.textContent=b.name;$('business').append(o);});if(pending&&businesses.some(b=>b.id===pending.businessId))$('business').value=pending.businessId;timezone();
   $('login').hidden=true;$('workspace').hidden=!businesses.length;
-  $('notice').textContent=!businesses.length?'Tu cuenta aún no tiene un negocio asignado. Pide al responsable del piloto que complete el alta.':data.mode==='demo'?'DEMO LOCAL · Los registros se guardan en este equipo. El intérprete de prueba reconoce los ejemplos de esta página; Supabase, Gemini y WhatsApp aún no están conectados.':'PILOTO · Registros guardados en Supabase. Este chat prueba el mismo flujo que usará WhatsApp.';
+  $('notice').textContent=!businesses.length?'Tu cuenta aún no tiene un negocio asignado. Pide al responsable del piloto que complete el alta.':data.mode==='demo'?'DEMO LOCAL · Los registros se guardan en este equipo. El intérprete de texto sólo reconoce los ejemplos. La voz necesita GEMINI_API_KEY en .env.local; Supabase y WhatsApp no están conectados.':'PILOTO · Registros guardados en Supabase. Puedes escribir o enviar una nota de voz.';
   $('connection').textContent=data.mode==='demo'?'Prueba local · Texto y voz':'Conectado · Texto y voz';
  } catch(e){$('workspace').hidden=true;$('login').hidden=false;$('notice').textContent=e.message;}
 }
