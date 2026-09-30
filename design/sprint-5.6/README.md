@@ -1,4 +1,4 @@
-# Cuenta Clara · propuesta visual para Sprint 5.6
+# Vendixa · propuesta visual para Sprint 5.6
 
 Esta carpeta contiene una referencia independiente de la aplicación actual. No está desplegada ni conectada a datos reales. Abre `index.html` y `app.html` en un navegador para revisar la landing y el chat; `privacy.html` muestra el tono propuesto para privacidad.
 

@@ -16,6 +16,11 @@ test('commercial pages keep the approved palette and visible account controls',a
  const install=await readFile('public/install.html','utf8');
  assert.match(install,/Agregar a pantalla de inicio/);
  for(const html of [landing,privacy,admin,install])assert.doesNotMatch(html,/\b(piloto|demo|prueba|beta|experimental|Supabase|Gemini|CRM|API)\b/i);
+ for(const html of [landing,privacy,admin,install]){
+  assert.match(html,/<meta name="apple-mobile-web-app-title" content="Vendixa">/);
+  assert.match(html,/<meta property="og:site_name" content="Vendixa">/);
+  assert.doesNotMatch(html,/Cuenta Clara|cuenta clara|CUENTA CLARA/);
+ }
  for(const color of ['#F6C992','#30525C','#ACC0D3','#D396A6','#09A1A1','#5484A4'])assert.ok(css.includes(color),`${color} missing`);
  assert.match(css,/100dvh/);
  assert.match(css,/safe-area-inset-bottom/);
@@ -23,9 +28,14 @@ test('commercial pages keep the approved palette and visible account controls',a
 
 test('installation manifest declares branded icons',async()=>{
  const manifest=JSON.parse(await readFile('public/manifest.webmanifest','utf8'));
- assert.equal(manifest.name,'Cuenta Clara');assert.equal(manifest.display,'standalone');assert.equal(manifest.start_url,'/');
+ assert.equal(manifest.name,'Vendixa');assert.equal(manifest.display,'standalone');assert.equal(manifest.start_url,'/');
+ assert.equal(manifest.short_name,'Vendixa');
+ assert.equal(manifest.description,'Registra ventas, gastos y cuentas por cobrar por texto o voz y consulta cómo va tu negocio.');
  for(const [size,file] of [[192,'public/icon-192.png'],[512,'public/icon-512.png']]){
   const bytes=await readFile(file);assert.equal(bytes.toString('hex',0,8),'89504e470d0a1a0a');assert.equal(bytes.readUInt32BE(16),size);assert.equal(bytes.readUInt32BE(20),size);
  }
  assert.match(await readFile('public/index.html','utf8'),/rel="manifest"/);
+ for(const file of ['public/apple-touch-icon.png','public/favicon-32.png','public/og-vendixa.png']){
+  const bytes=await readFile(file);assert.equal(bytes.toString('hex',0,8),'89504e470d0a1a0a');
+ }
 });

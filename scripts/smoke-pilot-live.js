@@ -5,7 +5,7 @@ import {SupabaseStore} from '../src/store.js';
 import {handleMessage} from '../src/service.js';
 import {interpret} from '../src/interpret.js';
 const env=process.env,ref='vixbjjjeewcjawwemvnx';
-if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`)throw Error('Cuenta Clara target not confirmed');
+if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`)throw Error('Vendixa target not confirmed');
 if(!env.TEST_USER_ID||!env.GEMINI_API_KEY)throw Error('Smoke configuration incomplete');
 const store=new SupabaseStore(env),actor=env.TEST_USER_ID,name=`Smoke Pilot 5.5 ${new Date().toISOString()}`;
 const profile=await store.request(`profiles?id=eq.${actor}&select=id`);assert.equal(profile.length,1);

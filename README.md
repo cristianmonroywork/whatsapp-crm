@@ -1,8 +1,14 @@
-# Cuenta Clara — MVP Sprint 5.6
+# Vendixa — MVP
 
 Asistente de cuentas para micronegocios en México. Canal previsto: WhatsApp; incluye un chat pequeño para probar el mismo servicio. Proyecto nuevo e independiente, sin vínculo a recursos ni proyectos de otros clientes.
 
 **Estado:** texto y notas de voz usan el mismo servicio financiero; permiten registrar lotes y consultar cifras reales del negocio en lenguaje natural. El alta por invitación y las métricas internas siguen vigentes. Sprint 5.6 renueva la presentación comercial y la experiencia móvil sin modificar la lógica financiera. La integración Meta sigue pendiente.
+
+## Marca e instalación
+
+La interfaz, las páginas secundarias, la privacidad, el manifiesto PWA, el icono y las tarjetas para compartir enlaces usan Vendixa. La descripción pública es: “Registra ventas, gastos y cuentas por cobrar por texto o voz y consulta cómo va tu negocio.” Las instalaciones anteriores pueden conservar el nombre e icono que guardó el sistema operativo; en ese caso, elimina el acceso directo anterior y vuelve a añadir Vendixa desde Safari o Chrome. El repositorio, paquete npm, URL temporal de Vercel, identificador de Supabase y migraciones mantienen sus nombres técnicos para evitar cambios de infraestructura o de datos históricos.
+
+En el proyecto Supabase exclusivo, Auth usa las plantillas de correo predeterminadas y no tiene SMTP personalizado. Las vistas de confirmación y recuperación no muestran la marca anterior. No se modificaron la configuración de Auth, los redirects ni las credenciales durante este cambio.
 
 ## Presentación comercial (Sprint 5.6)
 
@@ -10,7 +16,7 @@ La portada explica cómo registrar ventas, gastos y cuentas por cobrar por texto
 
 La paleta aprobada es `#F6C992`, `#30525C`, `#ACC0D3`, `#D396A6`, `#09A1A1` y `#5484A4`. Los archivos de referencia revisados se conservan en `design/sprint-5.6/`. La interfaz para clientes evita lenguaje de operación interna; las columnas y banderas `is_pilot`, eventos, RLS y límites permanecen para administración. El panel sigue protegido por membresía de operador. Su confirmación visible dice `DESACTIVAR NEGOCIO` y el servidor traduce esa frase al valor que exige la función SQL existente, sin migración de datos.
 
-`manifest.webmanifest` y los iconos PNG de 192 y 512 px permiten que navegadores compatibles ofrezcan instalar Cuenta Clara. El servicio requiere conexión; no se almacenan respuestas financieras fuera de línea. Para comprobar la experiencia en dispositivos: abrir la URL HTTPS en Safari de iPhone y Chrome de Android, añadirla a la pantalla de inicio, iniciar sesión, grabar/escuchar/cancelar/enviar una nota, abrir el teclado y revisar que el historial y el campo de entrada sigan accesibles. Repetir en escritorio con ancho amplio y estrecho. La presencia de una opción de instalación depende del navegador y dispositivo; no se ofrece un botón propio de instalación.
+`manifest.webmanifest` y los iconos PNG de 192 y 512 px permiten que navegadores compatibles ofrezcan instalar Vendixa. El servicio requiere conexión; no se almacenan respuestas financieras fuera de línea. Para comprobar la experiencia en dispositivos: abrir la URL HTTPS en Safari de iPhone y Chrome de Android, añadirla a la pantalla de inicio, iniciar sesión, grabar/escuchar/cancelar/enviar una nota, abrir el teclado y revisar que el historial y el campo de entrada sigan accesibles. Repetir en escritorio con ancho amplio y estrecho. La presencia de una opción de instalación depende del navegador y dispositivo; no se ofrece un botón propio de instalación.
 
 En iPhone, la instalación se inicia manualmente desde Safari: Compartir → Agregar a pantalla de inicio → Abrir como app cuando esté disponible. `/install.html` explica esos pasos y se enlaza desde la portada y el menú móvil. Android sí mostró la opción de instalación en la prueba del usuario. En la vista móvil, el botón **Menú** permite abrir privacidad, consultar las instrucciones de instalación, entrar al panel si la sesión tiene permiso de operador y cerrar sesión. La selección de negocio permanece visible encima del chat.
 
@@ -82,7 +88,7 @@ El operador comparte la URL de la PWA y un código de invitación con 3–5 vend
 
 Para habilitar altas en el proyecto aislado: aplica `004_pilot.sql`, configura `PILOT_SIGNUP_ENABLED=true` y un `PILOT_INVITE_CODE` largo y aleatorio **sólo** en variables seguras de Vercel y vuelve a desplegar. Configura en Supabase Auth la URL del deployment piloto para confirmación de correo. El código de invitación no se guarda en el navegador ni en Supabase. Las sesiones usan cookie HttpOnly, SameSite=Strict y Secure en Vercel. Todas las acciones financieras vuelven a verificar la membresía en servidor y SQL; `business_id` del navegador por sí solo no autoriza nada.
 
-El panel `/admin.html` sólo entrega datos mediante `/api/admin/pilots` si el usuario autenticado figura en `pilot_operators`. Ésta es una designación **única del operador**, no un alta manual por vendedor. Después de la migración, inserta el UUID del usuario operador ya confirmado en `pilot_operators` dentro del proyecto Cuenta Clara; no añadas otros usuarios por defecto. La tabla muestra negocios piloto, usuario, alta, último acceso, mensajes, operaciones, consultas, voz, errores y sesiones activas (actividad en los últimos 15 minutos). No muestra importes ni contenido de mensajes. Los eventos `signup_completed`, `business_created`, `message_text_sent`, `message_audio_sent`, `transaction_created`, `query_executed`, `ambiguity_returned`, `error_returned`, `correction_requested`, `correction_confirmed`, `deletion_confirmed`, `session_started` y `pilot_deactivated` conservan usuario, negocio, fecha y tipo; `error_returned` añade sólo categoría de error. Las operaciones de un lote producen eventos separados. Los eventos del mismo mensaje no se repiten al reintentarlo.
+El panel `/admin.html` sólo entrega datos mediante `/api/admin/pilots` si el usuario autenticado figura en `pilot_operators`. Ésta es una designación **única del operador**, no un alta manual por vendedor. Después de la migración, inserta el UUID del usuario operador ya confirmado en `pilot_operators` dentro del proyecto Vendixa; no añadas otros usuarios por defecto. La tabla muestra negocios piloto, usuario, alta, último acceso, mensajes, operaciones, consultas, voz, errores y sesiones activas (actividad en los últimos 15 minutos). No muestra importes ni contenido de mensajes. Los eventos `signup_completed`, `business_created`, `message_text_sent`, `message_audio_sent`, `transaction_created`, `query_executed`, `ambiguity_returned`, `error_returned`, `correction_requested`, `correction_confirmed`, `deletion_confirmed`, `session_started` y `pilot_deactivated` conservan usuario, negocio, fecha y tipo; `error_returned` añade sólo categoría de error. Las operaciones de un lote producen eventos separados. Los eventos del mismo mensaje no se repiten al reintentarlo.
 
 El operador puede pulsar **Desactivar** en el panel. Debe escribir el nombre exacto del negocio y la frase `DESACTIVAR PILOTO`. La función SQL exige además que sea operador y que el destino sea un piloto activo; deja `is_active=false` y registra `pilot_deactivated`. Desde entonces el vendedor no puede verlo ni registrar o consultar datos, incluso si manipula el ID. **La desactivación es reversible a nivel de datos y conserva mensajes, transcripciones, movimientos y auditoría** para investigar el piloto. La eliminación definitiva requiere un procedimiento posterior controlado; la página `/privacy.html` indica al vendedor que la solicite al operador que lo invitó. No se ejecuta un borrado físico automático.
 
@@ -133,7 +139,7 @@ Ejemplos: “Vendí 3 playeras en $900 y gasté $200 de gasolina”; “Ayer ven
 
 ## Configurar Supabase nuevo
 
-1. Identifica por nombre e ID el **proyecto Supabase nuevo y exclusivo de Cuenta Clara**. Verifica su cuenta antes de ejecutar SQL. No selecciones uno existente de clientes o producción.
+1. Identifica por nombre e ID el **proyecto Supabase nuevo y exclusivo de Vendixa**. Verifica su cuenta antes de ejecutar SQL. No selecciones uno existente de clientes o producción.
 2. En un proyecto vacío ejecuta en orden `001_initial.sql`, `002_batches.sql`, `003_queries.sql` y `004_pilot.sql`. Si ya se completó Sprint 5, ejecuta **sólo** `supabase/migrations/004_pilot.sql`. Verifica la referencia del proyecto antes de ejecutar SQL.
 3. En Authentication crea un usuario de piloto con correo y contraseña; para prueba usa una cuenta confirmada. El alta pública no forma parte de esta app.
 4. Copia su UUID y ejecuta `supabase/onboard.example.sql` tras sustituir el marcador. Genera un negocio nuevo y su membresía. Conserva el UUID mostrado.
@@ -247,13 +253,13 @@ El servidor acepta WAV, WebM, OGG, MP3 y M4A/MP4. Comprueba MIME, firma del arch
 
 El audio sólo vive en memoria durante la petición y se descarta al terminar; no se guarda en Storage, tablas, logs ni repositorio. En Supabase se conservan `messages.content` (transcripción), `messages.media` (tipo audio, origen web, transcripción, MIME, tamaño, duración, códec, hash SHA-256 y modelo/proveedor), actor, negocio, fecha, respuesta e ID interno. `movements.source_message_id` y `movement_audit.message_id` vinculan el movimiento y las correcciones. Gemini recibe temporalmente el audio conforme a la configuración de datos del proveedor. El navegador mantiene la vista previa local sólo hasta enviar o cancelar; una petición fallida la conserva para reintentar con el mismo identificador.
 
-Para probar sin escribir en Supabase: `npm test` cubre el endpoint con PostgreSQL local y un transcriptor simulado; `npm run check` revisa sintaxis. En modo `live`, inicia sesión en la web, graba “Gasté 350 pesos de gasolina”, escucha y envía. Debe aparecer “Escuché: …” seguido del gasto de $350. Revisa `messages`, `movements` y `movement_audit` en el proyecto Supabase exclusivo de Cuenta Clara. La prueba controlada `npm run test:voice-live` recibe un archivo local mediante `VOICE_SMOKE_FILE` con la frase “Gasté trescientos cincuenta pesos de gasolina”; exige confirmar el proyecto Supabase `vixbjjjeewcjawwemvnx` y el negocio piloto mediante las variables existentes, y registra un gasto real de $350 antes de revisar auditoría e idempotencia. En macOS se puede generar un ejemplo temporal así:
+Para probar sin escribir en Supabase: `npm test` cubre el endpoint con PostgreSQL local y un transcriptor simulado; `npm run check` revisa sintaxis. En modo `live`, inicia sesión en la web, graba “Gasté 350 pesos de gasolina”, escucha y envía. Debe aparecer “Escuché: …” seguido del gasto de $350. Revisa `messages`, `movements` y `movement_audit` en el proyecto Supabase exclusivo de Vendixa. La prueba controlada `npm run test:voice-live` recibe un archivo local mediante `VOICE_SMOKE_FILE` con la frase “Gasté trescientos cincuenta pesos de gasolina”; exige confirmar el proyecto Supabase `vixbjjjeewcjawwemvnx` y el negocio piloto mediante las variables existentes, y registra un gasto real de $350 antes de revisar auditoría e idempotencia. En macOS se puede generar un ejemplo temporal así:
 
 ```sh
-say -v Paulina -o /private/tmp/cuenta-clara-sprint3.aiff 'Gasté trescientos cincuenta pesos de gasolina'
-afconvert -f WAVE -d LEI16@16000 /private/tmp/cuenta-clara-sprint3.aiff /private/tmp/cuenta-clara-sprint3.wav
-VOICE_SMOKE_FILE=/private/tmp/cuenta-clara-sprint3.wav npm run test:voice-live
-rm /private/tmp/cuenta-clara-sprint3.aiff /private/tmp/cuenta-clara-sprint3.wav
+say -v Paulina -o /private/tmp/vendixa-sprint3.aiff 'Gasté trescientos cincuenta pesos de gasolina'
+afconvert -f WAVE -d LEI16@16000 /private/tmp/vendixa-sprint3.aiff /private/tmp/vendixa-sprint3.wav
+VOICE_SMOKE_FILE=/private/tmp/vendixa-sprint3.wav npm run test:voice-live
+rm /private/tmp/vendixa-sprint3.aiff /private/tmp/vendixa-sprint3.wav
 ```
 
 El intérprete demo sigue separado y sólo entiende los ejemplos de texto limitados; la transcripción de voz real requiere `GEMINI_API_KEY` incluso en desarrollo.

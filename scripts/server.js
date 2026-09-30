@@ -17,4 +17,4 @@ createServer(async(req,res)=>{
  res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':path.endsWith('.png')?'image/png':path.endsWith('.webmanifest')?'application/manifest+json':'text/html; charset=utf-8');
  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
  res.end(await readFile(new URL(`../public/${files[path]}`,import.meta.url)));
-}).listen(Number(process.env.PORT || 3000),'127.0.0.1',()=>console.log(`Cuenta Clara: http://127.0.0.1:${process.env.PORT||3000} (${demo?'DEMO local, sin Gemini ni Supabase':'Supabase + Gemini'})`));
+}).listen(Number(process.env.PORT || 3000),'127.0.0.1',()=>console.log(`Vendixa: http://127.0.0.1:${process.env.PORT||3000} (${demo?'DEMO local, sin Gemini ni Supabase':'Supabase + Gemini'})`));

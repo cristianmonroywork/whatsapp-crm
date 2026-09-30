@@ -6,7 +6,7 @@ import {createHandler} from '../api/index.js';
 
 const env=process.env;
 const ref='vixbjjjeewcjawwemvnx';
-if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`) throw new Error('Cuenta Clara Supabase target not confirmed');
+if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`) throw new Error('Vendixa Supabase target not confirmed');
 if(!env.TEST_USER_ID||!env.DEPLOY_BUSINESS_ID||!env.DEPLOY_BUSINESS_NAME_CONFIRM||!env.GEMINI_API_KEY) throw new Error('Smoke configuration incomplete');
 if(!env.VOICE_SMOKE_FILE) throw new Error('VOICE_SMOKE_FILE must point to an audio file saying: Gasté trescientos cincuenta pesos de gasolina');
 const store=new SupabaseStore(env);

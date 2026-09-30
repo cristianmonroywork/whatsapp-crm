@@ -1,4 +1,4 @@
-// Opt-in end-to-end test. Creates a dedicated business in the confirmed Cuenta Clara Supabase project.
+// Opt-in end-to-end test. Creates a dedicated business in the confirmed Vendixa Supabase project.
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
@@ -9,7 +9,7 @@ import {handleMessage} from '../src/service.js';
 import {createHandler} from '../api/index.js';
 
 const env=process.env, ref='vixbjjjeewcjawwemvnx';
-if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`) throw new Error('Cuenta Clara Supabase target not confirmed');
+if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`) throw new Error('Vendixa Supabase target not confirmed');
 if(!env.TEST_USER_ID||!env.GEMINI_API_KEY) throw new Error('Smoke configuration incomplete');
 const store=new SupabaseStore(env), actor=env.TEST_USER_ID, business=randomUUID();
 await store.request('profiles?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=minimal'},body:JSON.stringify({id:actor,display_name:'Piloto Sprint 4'})});

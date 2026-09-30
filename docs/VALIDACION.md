@@ -45,7 +45,7 @@ Las respuestas HTTP de Gemini, Meta y el adaptador REST de Supabase se simularon
 
 ## Pendiente para aceptar Sprint 1 en la nube
 
-1. Verificar los ID y propietarios de GitHub, Supabase, Gemini y Vercel exclusivos de Cuenta Clara.
+1. Verificar los ID y propietarios de GitHub, Supabase, Gemini y Vercel exclusivos de Vendixa.
 2. Ejecutar migración sólo en el proyecto Supabase nuevo identificado.
 3. Crear usuario de prueba, configurar claves locales y ejecutar `npm run test:gemini` y `npm run test:live`.
 4. Confirmar $900 y los tres registros en Supabase real; conservar el ID de negocio emitido por la prueba.

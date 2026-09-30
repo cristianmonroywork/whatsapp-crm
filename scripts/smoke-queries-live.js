@@ -1,11 +1,11 @@
-// Opt-in Sprint 5 smoke. Writes only to a new business in the confirmed Cuenta Clara project.
+// Opt-in Sprint 5 smoke. Writes only to a new business in the confirmed Vendixa project.
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {SupabaseStore} from '../src/store.js';
 import {handleMessage} from '../src/service.js';
 import {interpret} from '../src/interpret.js';
 const env=process.env,ref='vixbjjjeewcjawwemvnx';
-if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`)throw Error('Cuenta Clara Supabase target not confirmed');
+if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`)throw Error('Vendixa Supabase target not confirmed');
 if(!env.TEST_USER_ID||!env.GEMINI_API_KEY)throw Error('Smoke configuration incomplete');
 const store=new SupabaseStore(env),actor=env.TEST_USER_ID,business=randomUUID();
 await store.request('profiles?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=minimal'},body:JSON.stringify({id:actor,display_name:'Piloto Sprint 5'})});
