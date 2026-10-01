@@ -18,7 +18,7 @@ Al anular una venta de inventario mediante la confirmación existente, el movimi
 
 La valoración distingue **valor potencial de venta** (existencias × precio estándar) y **valor registrado a costo** (existencias × costo unitario). Si falta alguno de esos datos, la respuesta indica cuántas piezas no están cubiertas; nunca llama utilidad, ganancia o valor contable a esas cifras. No se implementan proveedores, compras, almacenes múltiples, códigos de barras, lotes, caducidades, facturación ni SAT.
 
-Para verificar localmente: `npm test` cubre altas, variantes, ventas, lotes, reversión, valoración, voz, RLS, idempotencia y las pruebas anteriores; `npm run check` revisa sintaxis. La migración y una prueba real con Gemini/Supabase deben verificarse antes de publicar la nueva ruta en Vercel.
+Para verificar localmente: `npm test` cubre altas, variantes, ventas, lotes, reversión, valoración, voz, RLS, idempotencia y las pruebas anteriores; `npm run check` revisa sintaxis. Después de aplicar la migración al proyecto exclusivo, `npm run test:inventory-live` crea un negocio de prueba separado, usa Gemini y Supabase reales, y comprueba stock, venta, valoración, auditorías e idempotencia. Requiere las variables de prueba y la confirmación de proyecto ya documentadas; conserva ese negocio para inspección. Ejecútalo antes de publicar la nueva ruta en Vercel.
 
 ## Marca e instalación
 

@@ -1,0 +1,38 @@
+// Opt-in integration test. Writes only to a new business in the confirmed Vendixa project.
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {SupabaseStore} from '../src/store.js';
+import {interpret} from '../src/interpret.js';
+import {handleMessage} from '../src/service.js';
+
+const env=process.env,ref='vixbjjjeewcjawwemvnx';
+if(env.ALLOW_LIVE_SMOKE!=='isolated-project'||env.SUPABASE_PROJECT_REF_CONFIRM!==ref||new URL(env.SUPABASE_URL).host!==`${ref}.supabase.co`)throw new Error('Vendixa Supabase target not confirmed');
+if(!env.TEST_USER_ID||!env.GEMINI_API_KEY)throw new Error('Smoke configuration incomplete');
+const store=new SupabaseStore(env),actor=env.TEST_USER_ID,business=randomUUID();
+await store.request('profiles?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=minimal'},body:JSON.stringify({id:actor,display_name:'Prueba Vendixa'})});
+await store.request('businesses',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({id:business,name:`Smoke Inventario 5.7 ${new Date().toISOString()}`,timezone:'America/Mexico_City'})});
+await store.request('memberships',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({business_id:business,user_id:actor})});
+const send=(text,id=randomUUID())=>handleMessage({store,interpreter:interpret,actor,business,channel:'web',externalId:id,text});
+const opening=await send('Tengo 100 gorras marca X a $1,500 cada una y 100 gorras marca Y a $1,200.');
+assert.equal(opening.status,'inventory_batch_recorded');
+const saleId=randomUUID(),sale=await send('Vendí 50 gorras marca X en $1,500 cada una.',saleId);
+assert.equal(sale.status,'inventory_recorded');assert.equal(Number(sale.operations[0].amount_cents),7500000);
+assert.equal((await send('Vendí 50 gorras marca X en $1,500 cada una.',saleId)).duplicate,true);
+const list=await send('¿Qué tengo en inventario?');assert.equal(list.status,'inventory_list');
+const value=await send('¿Cuál es mi inventario en pesos?');assert.equal(value.status,'inventory_value');
+assert.equal(Number(value.total_quantity),150);assert.equal(value.sale_value_cents,'19500000');
+const x=list.products.find(p=>p.label==='gorra marca X'),y=list.products.find(p=>p.label==='gorra marca Y');
+assert.equal(Number(x.quantity),50);assert.equal(Number(y.quantity),100);
+const financial=await send('¿Cuánto vendí hoy?');assert.equal(Number(financial.sales_cents),7500000);
+const messages=await store.request(`messages?business_id=eq.${business}&select=id,external_id,response`);
+const movements=await store.request(`movements?business_id=eq.${business}&select=id,kind,amount_cents,source_message_id`);
+const inventory=await store.request(`inventory_movements?business_id=eq.${business}&select=id,kind,quantity_delta,source_message_id,financial_movement_id`);
+const financeAudit=await store.request(`movement_audit?business_id=eq.${business}&select=movement_id,message_id,action`);
+const inventoryAudit=await store.request(`inventory_audit?business_id=eq.${business}&select=inventory_movement_id,message_id,action`);
+const saleMessage=messages.find(m=>m.external_id===saleId);
+assert.equal(messages.filter(m=>m.external_id===saleId).length,1);
+assert.equal(movements.length,1);assert.equal(inventory.length,3);assert.equal(financeAudit.length,1);assert.equal(inventoryAudit.length,3);
+assert.equal(movements[0].source_message_id,saleMessage.id);
+assert.equal(inventory.find(i=>i.kind==='sale').financial_movement_id,movements[0].id);
+assert.ok(inventory.every(i=>inventoryAudit.some(a=>a.inventory_movement_id===i.id&&a.message_id===i.source_message_id)));
+console.log(JSON.stringify({passed:true,project:ref,business_id:business,sales_cents:financial.sales_cents,stock_x:x.quantity,stock_y:y.quantity,potential_sale_value_cents:value.sale_value_cents,messages:messages.length,movements:movements.length,inventory_movements:inventory.length,financial_audits:financeAudit.length,inventory_audits:inventoryAudit.length},null,2));
