@@ -16,6 +16,7 @@
     "test:pilot-live": "node --env-file=.env.local scripts/smoke-pilot-live.js",
     "test:batch-live": "node --env-file=.env.local scripts/smoke-batch-live.js",
     "test:inventory-live": "node --env-file=.env.local scripts/smoke-inventory-live.js",
+    "test:units-live": "node --env-file=.env.local scripts/smoke-units-live.js",
     "test:live": "node --env-file=.env.local scripts/smoke-live.js",
     "test:voice-live": "node --env-file=.env.local scripts/smoke-voice-live.js",
     "test:deployment": "node --env-file=.env.local scripts/smoke-deployment.js",

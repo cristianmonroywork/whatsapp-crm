@@ -15,7 +15,7 @@ beforeEach(async()=>{await store.db.exec('truncate businesses,profiles,auth.user
 const ops=(...operations)=>({ambiguous:false,operations});
 const send=(text,raw,extra={})=>handleMessage({store,interpreter:async()=>raw,business,actor,channel:'web',externalId:randomUUID(),text,...extra});
 const product=(brand='X',extra={})=>base('opening_stock',{product_name:'gorra',brand,quantity:100,unit_price:brand==='X'?'1500':'1200',...extra});
-const stock=async()=>(await store.db.query('select name,brand,color,size,quantity,sale_price_cents,unit_cost_cents from inventory_stock order by brand,color,size')).rows;
+const stock=async()=>(await store.db.query('select name,brand,color,size,quantity,sale_price_cents,unit_cost_cents from inventory_stock order by brand,color,size')).rows.map(row=>({...row,quantity:Number(row.quantity)}));
 const count=async table=>Number((await store.db.query(`select count(*) as n from ${table}`)).rows[0].n);
 
 test('opening stock for two products is atomic and valued from catalog prices',async()=>{
@@ -105,7 +105,7 @@ test('a confirmed sale deletion restores stock with a reversal and both audit tr
  assert.equal((await stock())[0].quantity,50);
  const changed=await send(`CONFIRMAR ${pending.token}`,base('clarify'));assert.equal(changed.status,'changed');
  assert.equal((await stock())[0].quantity,100);
- assert.deepEqual((await store.db.query('select kind,quantity_delta from inventory_movements order by sequence')).rows.map(r=>[r.kind,r.quantity_delta]),[['opening_stock',100],['sale',-50],['reversal',50]]);
+ assert.deepEqual((await store.db.query('select kind,quantity_delta from inventory_movements order by sequence')).rows.map(r=>[r.kind,Number(r.quantity_delta)]),[['opening_stock',100],['sale',-50],['reversal',50]]);
  assert.equal((await store.db.query("select count(*) as n from inventory_audit where action='reverse'")).rows[0].n,1);
  assert.equal((await store.db.query("select count(*) as n from movement_audit where action='delete_last'")).rows[0].n,1);
  assert.equal((await send('¿Cuánto vendí hoy?',base('totals',{metric:'sales'}))).sales_cents,0);
@@ -149,5 +149,5 @@ test('Gemini contract exposes structured inventory facts, never a stock total to
  const op=schema.properties.operations.items;
  assert.ok(op.properties.intent.enum.includes('inventory_sale'));
  for(const key of ['product_name','brand','variant','color','size','sku','unit_cost'])assert.ok(op.required.includes(key));
- assert.equal(op.properties.quantity.type[0],'integer');
+ assert.equal(op.properties.quantity.type[0],'string');
 });

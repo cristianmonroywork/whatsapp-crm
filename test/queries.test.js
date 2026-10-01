@@ -23,15 +23,19 @@ test('large aggregate amounts format exactly from cent strings',()=>{
 
 test('today, yesterday, current and previous week, current and previous month use DB dates',async()=>{
  const today=await day("now() at time zone 'America/Mexico_City'");
+ const yesterday=await day("(now() at time zone 'America/Mexico_City')-interval '1 day'");
  const lastWeek=await day("date_trunc('week',now() at time zone 'America/Mexico_City')-interval '7 days'");
+ const thisWeek=await day("date_trunc('week',now() at time zone 'America/Mexico_City')");
  const lastMonth=await day("date_trunc('month',now() at time zone 'America/Mexico_City')-interval '1 month'");
  await sale('100','today');await sale('200','yesterday');await sale('300',lastWeek);await sale('400',lastMonth);
  const todayResult=await ask('totals',{metric:'sales'});assert.equal(todayResult.sales_cents,10000);assert.equal(todayResult.from,today);
  assert.equal((await ask('totals',{date:'yesterday',metric:'sales'})).sales_cents,20000);
  const week=await ask('totals',{period:'week',metric:'sales'});assert.equal(week.sales_cents,10000+(week.from<=await day("(now() at time zone 'America/Mexico_City')-interval '1 day'")?20000:0));
- assert.equal((await ask('totals',{period:'last_week',metric:'sales'})).sales_cents,30000);
+ assert.equal((await ask('totals',{period:'last_week',metric:'sales'})).sales_cents,30000+(yesterday<thisWeek?20000:0));
  assert.ok((await ask('totals',{period:'month',metric:'sales'})).sales_cents>=10000);
- assert.equal((await ask('totals',{period:'last_month',metric:'sales'})).sales_cents,40000);
+ const priorMonth=lastMonth.slice(0,7);
+ assert.equal((await ask('totals',{period:'last_month',metric:'sales'})).sales_cents,
+  40000+(lastWeek.startsWith(priorMonth)?30000:0)+(yesterday.startsWith(priorMonth)?20000:0));
 });
 test('expenses, explicit dates, range and invalid dates',async()=>{
  await expense('320');const today=await day("now() at time zone 'America/Mexico_City'");

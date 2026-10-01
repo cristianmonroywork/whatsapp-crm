@@ -25,6 +25,8 @@ export async function createLocalStore(path) {
  if(!pilot.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/004_pilot.sql',import.meta.url),'utf8'));
  const inventory=await db.query("select to_regprocedure('public.process_inventory_message(uuid,uuid,text,text,text,text,jsonb,jsonb)') as name");
  if(!inventory.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/005_inventory.sql',import.meta.url),'utf8'));
+ const units=await db.query("select 1 from information_schema.columns where table_schema='public' and table_name='products' and column_name='base_unit'");
+ if(!units.rows.length) await db.exec(await readFile(new URL('../supabase/migrations/006_inventory_units.sql',import.meta.url),'utf8'));
  const store={
   db,
   async seed(user=DEMO_USER,business=DEMO_BUSINESS,name='Mi negocio de prueba',timezone='America/Mexico_City') {
