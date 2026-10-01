@@ -175,11 +175,13 @@ export function render(r) {
     case 'inventory_recorded': case 'inventory_batch_recorded': {
       const entries=r.operations||[];
       const sales=entries.filter(e=>e.kind==='inventory_sale'||e.kind==='sale');
+      const stockOnly=entries.filter(e=>e.kind==='sale_unpriced');
       const stocked=entries.filter(e=>e.kind==='opening_stock'||e.kind==='stock_in');
       const expenses=entries.filter(e=>e.kind==='expense');
       const parts=[];
       if(sales.length) parts.push(`Vendiste ${sales.map(e=>e.unit&&e.unit!=='pieza'?`${readableQuantity(e.quantity_text??e.quantity)} ${unitLabel(e.unit,e.quantity)} de ${e.product_label} por ${money(e.amount_cents)}`:`${readableQuantity(e.quantity_text??e.quantity??1)} ${productUnits(e.product_label,e.quantity||1)} por ${money(e.amount_cents)}`).join(' y ')}`);
       if(stocked.length) parts.push(`Registré ${stocked.map(e=>e.unit&&e.unit!=='pieza'?`${readableQuantity(e.quantity_text??e.quantity)} ${unitLabel(e.unit,e.quantity)} de ${e.product_label}; quedan ${readableQuantity(e.stock_remaining_text??e.stock_remaining)} ${unitLabel(e.stock_unit,e.stock_remaining)}`:`${readableQuantity(e.quantity_text??e.quantity)} ${productUnits(e.product_label,e.quantity)}; quedan ${readableQuantity(e.stock_remaining_text??e.stock_remaining)}`).join(' y ')}`);
+      if(stockOnly.length) parts.push(`Desconté ${stockOnly.map(e=>`${readableQuantity(e.quantity_text??e.quantity)} ${unitLabel(e.unit,e.quantity)} de ${e.product_label}; quedan ${readableQuantity(e.stock_remaining_text??e.stock_remaining)} ${unitLabel(e.stock_unit,e.stock_remaining)}`).join(' y ')}. No sumé una venta en dinero porque falta el precio`);
       if(expenses.length) parts.push(`${money(expenses.reduce((n,e)=>n+Number(e.amount_cents),0))} de gasto`);
       if(sales.length===1&&sales[0].stock_remaining!=null) parts.push(`Te quedan ${readableQuantity(sales[0].stock_remaining_text??sales[0].stock_remaining)}${sales[0].stock_unit&&sales[0].stock_unit!=='pieza'?` ${unitLabel(sales[0].stock_unit,sales[0].stock_remaining)}`:''}`);
       return `Listo. ${parts.join('. ')}.`;

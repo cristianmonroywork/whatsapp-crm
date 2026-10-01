@@ -59,14 +59,28 @@ test('litres and millilitres keep decimal stock and price per litre',async()=>{
 
 test('cartons remain cartons, never inferred bottles; piece inventory survives',async()=>{
  await send('Tengo 20 cajas de agua',base('opening_stock',{product_name:'agua',quantity:'20',unit:'caja'}));
- await send('Vendí 3 cajas',base('inventory_sale',{product_name:'agua',quantity:'3',unit:'caja',unit_price:'120',price_unit:'caja'}));
+ const unpriced=await send('Vendí 3 cajas',base('inventory_sale',{product_name:null,quantity:'3',unit:'caja'}));
+ assert.equal(unpriced.operations[0].kind,'sale_unpriced');assert.equal(unpriced.operations[0].amount_cents,null);
+ assert.match(unpriced.text,/No sumé una venta en dinero/);
  assert.equal(Number((await stock('agua')).quantity),17);
+ assert.equal(await count('movements'),0);assert.equal(await count('inventory_audit'),2);
  const bottles=await send('Vendí 2 piezas de agua',base('inventory_sale',{product_name:'agua',quantity:'2',unit:'pieza',unit_price:'10',price_unit:'pieza'}));
  assert.equal(bottles.status,'clarify');assert.equal(Number((await stock('agua')).quantity),17);
  await send('Tengo 10 Rolex y 5 Cartier',ops(base('opening_stock',{product_name:'Rolex Submariner',quantity:'10',unit:'pieza',unit_price:'220000'}),base('opening_stock',{product_name:'Cartier Santos',quantity:'5',unit:'pieza',unit_price:'145000'})));
  const watch=await send('Vendí un Rolex en 215 mil',base('inventory_sale',{product_name:'Rolex Submariner',quantity:'1',unit:'pieza',unit_price:'215000'}));
  assert.equal(watch.operations[0].amount_cents,21500000);assert.equal(Number((await stock('Rolex Submariner')).quantity),9);
  assert.equal(Number((await stock('Cartier Santos')).quantity),5);
+});
+
+test('an unpriced stock sale rolls back with an invalid batch member',async()=>{
+ await send('Tengo 20 cajas de agua',base('opening_stock',{product_name:'agua',quantity:'20',unit:'caja'}));
+ const result=await send('Vendí 3 cajas y 2 kilos de jitomate',ops(
+  base('inventory_sale',{product_name:'agua',quantity:'3',unit:'caja'}),
+  base('inventory_sale',{product_name:'jitomate',quantity:'2',unit:'kg',unit_price:'28',price_unit:'kg'})
+ ));
+ assert.equal(result.status,'clarify');assert.equal(Number((await stock('agua')).quantity),20);
+ assert.equal(await count('inventory_movements'),1);assert.equal(await count('inventory_audit'),1);
+ assert.equal(await count('movements'),0);
 });
 
 test('variants and packages are isolated; no implicit costal conversion',async()=>{

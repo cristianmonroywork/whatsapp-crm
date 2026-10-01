@@ -25,6 +25,7 @@ test('migration 006 preserves existing piece stock, prices, audit and linked sal
   assert.equal((await old('old-sale',{intent:'inventory_sale',date:'today',product_name:'gorra',brand:'X',quantity:2,unit_price_cents:150000})).status,'inventory_recorded');
   const before=(await db.query('select quantity from inventory_stock')).rows[0].quantity;
   await db.exec(await readFile(new URL('../supabase/migrations/006_inventory_units.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/007_unpriced_stock_sales.sql',import.meta.url),'utf8'));
   const after=(await db.query('select quantity,base_unit,sale_price_original_cents,sale_price_unit from inventory_stock')).rows[0];
   assert.equal(Number(after.quantity),before);assert.equal(after.base_unit,'pieza');
   assert.equal(after.sale_price_original_cents,150000);assert.equal(after.sale_price_unit,'pieza');

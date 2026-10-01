@@ -29,6 +29,12 @@ const watches=await send('Tengo 10 Rolex Submariner a $220,000 cada uno y 5 Cart
 assert.equal(watches.status,'inventory_batch_recorded');
 const watchSale=await send('Vendí un Rolex Submariner en $215,000.');
 assert.equal(watchSale.status,'inventory_recorded');assert.equal(watchSale.operations[0].amount_cents,21500000);
+const boxes=await send('Tengo 20 cajas de agua.');
+assert.equal(boxes.status,'inventory_recorded');
+const boxSale=await send('Vendí 3 cajas.');
+assert.equal(boxSale.status,'inventory_recorded');assert.equal(boxSale.operations[0].kind,'sale_unpriced');
+assert.equal(boxSale.operations[0].amount_cents,null);
+assert.match(boxSale.text,/No sumé una venta en dinero/);
 let voice=null;
 if(env.INVENTORY_UNITS_VOICE_FILE){
  const bytes=await readFile(env.INVENTORY_UNITS_VOICE_FILE),details=await validateAudio(bytes,'audio/wav');
@@ -38,9 +44,10 @@ if(env.INVENTORY_UNITS_VOICE_FILE){
  assert.equal(voice.status,'inventory_recorded');assert.equal(voice.operations[0].amount_cents,65800);
 }
 const stock=await store.request(`inventory_stock?business_id=eq.${business}&select=name,quantity,base_unit`);
-const tomato=stock.find(p=>p.name==='jitomate'),rolex=stock.find(p=>p.name==='Rolex Submariner'),cartier=stock.find(p=>p.name==='Cartier Santos');
+const tomato=stock.find(p=>p.name==='jitomate'),rolex=stock.find(p=>p.name==='Rolex Submariner'),cartier=stock.find(p=>p.name==='Cartier Santos'),water=stock.find(p=>p.name==='agua');
 assert.equal(Number(tomato.quantity),voice?9626.5:9650);assert.equal(tomato.base_unit,'kg');
 assert.equal(Number(rolex.quantity),9);assert.equal(Number(cartier.quantity),5);
+assert.equal(Number(water.quantity),17);assert.equal(water.base_unit,'caja');
 const messages=await store.request(`messages?business_id=eq.${business}&select=id,external_id,media,response`);
 const inventory=await store.request(`inventory_movements?business_id=eq.${business}&select=id,source_message_id,original_quantity,original_unit,quantity_delta,base_unit,calculated_amount_cents`);
 const audits=await store.request(`inventory_audit?business_id=eq.${business}&select=inventory_movement_id,message_id`);
@@ -49,5 +56,5 @@ assert.equal(messages.filter(m=>m.external_id===saleId).length,1);
 assert.equal(inventory.length,audits.length);assert.equal(finance.length,voice?3:2);
 assert.ok(inventory.every(i=>audits.some(a=>a.inventory_movement_id===i.id&&a.message_id===i.source_message_id)));
 console.log(JSON.stringify({passed:true,project:ref,business_id:business,stock_kg:tomato.quantity,sale_cents:sale.operations[0].amount_cents,
- potential_sale_value_cents:value.sale_value_cents,rolex:rolex.quantity,cartier:cartier.quantity,voice:!!voice,
+ potential_sale_value_cents:value.sale_value_cents,rolex:rolex.quantity,cartier:cartier.quantity,water_boxes:water.quantity,voice:!!voice,
  messages:messages.length,inventory_movements:inventory.length,inventory_audits:audits.length,financial_movements:finance.length},null,2));
