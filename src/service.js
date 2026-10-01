@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {control,normalizeInput,queryIntents,render} from './domain.js';
+import {control,inventoryIntents,normalizeInput,queryIntents,render} from './domain.js';
 export function messageFingerprint(text,media=null) {
   // Audio retries are identified by the original bytes, even if a second transcription differs.
   return createHash('sha256').update(media?.type==='audio'&&media.sha256 ? `audio:${media.sha256}` : JSON.stringify({text,media})).digest('hex');
@@ -25,6 +25,6 @@ export async function handleMessage({store,interpreter,business,actor,channel,ex
   if(!quotaConsumed&&!await store.quota(actor,business,limits)) throw Object.assign(new Error('Llegaste al límite de mensajes del piloto. Intenta más tarde.'),{status:429});
   const command=media?.type==='audio'&&(!media.transcribed||media.ambiguous) ? {intent:'clarify'} : control(text)||normalizeInput(await interpreter(text));
   const envelope={p_business:business,p_actor:actor,p_channel:channel,p_external_id:externalId,p_fingerprint:fingerprint,p_content:text,p_media:media};
-  const result=command.intent==='batch' ? await store.batch({...envelope,p_commands:command.operations}) : queryIntents.has(command.intent) ? await store.query({...envelope,p_command:command}) : await store.process({...envelope,p_command:command});
+  const result=command.intent==='batch' ? await store.batch({...envelope,p_commands:command.operations}) : inventoryIntents.has(command.intent) ? await store.inventory({...envelope,p_commands:command.intent==='inventory_batch'?command.operations:[command]}) : queryIntents.has(command.intent) ? await store.query({...envelope,p_command:command}) : await store.process({...envelope,p_command:command});
   return withTranscript(result,media);
 }

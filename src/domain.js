@@ -1,4 +1,7 @@
-const allowed=new Set(['sale','expense','receivable','payment','totals','balance','debtors','summary','comparison','best_day','business_overview','correct_last','delete_last','clarify']);
+const inventoryMutations=new Set(['opening_stock','stock_in','inventory_sale']);
+export const inventoryIntents=new Set([...inventoryMutations,'inventory_list','inventory_count','inventory_value','inventory_top','inventory_batch']);
+const colorSingular=new Map([['negras','negra'],['negros','negro'],['blancas','blanca'],['blancos','blanco'],['rojas','roja'],['rojos','rojo'],['azules','azul'],['verdes','verde'],['grises','gris'],['amarillas','amarilla'],['amarillos','amarillo'],['rosas','rosa'],['moradas','morada'],['morados','morado']]);
+const allowed=new Set(['sale','expense','receivable','payment','totals','balance','debtors','summary','comparison','best_day','business_overview','correct_last','delete_last','clarify',...inventoryIntents]);
 export const queryIntents=new Set(['totals','balance','debtors','summary','comparison','best_day','business_overview']);
 function validDate(value) {
   if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -27,6 +30,36 @@ export function normalize(raw) {
   }
   if(!['day','week','last_week','month','last_month','range','all'].includes(raw.period)) return {intent:'clarify'};
   const out={intent:raw.intent,date,period:raw.period};
+  if(inventoryIntents.has(out.intent)) {
+    const attributes=['product_name','brand','variant','color','size','sku'];
+    for(const key of attributes) {
+      const value=raw[key];
+      if(value==null) continue;
+      if(typeof value!=='string'||!value.trim()||value.length>120||/[\x00-\x1f]/.test(value)) return {intent:'clarify'};
+      const clean=value.trim().normalize('NFC');
+      out[key]=key==='color'?(colorSingular.get(clean.toLocaleLowerCase('es-MX'))||clean):clean;
+    }
+    if(['opening_stock','stock_in','inventory_sale','inventory_count'].includes(out.intent)&&!out.product_name) return {intent:'clarify'};
+    if(inventoryMutations.has(out.intent)) {
+      if(!Number.isSafeInteger(raw.quantity)||raw.quantity<1||raw.quantity>1000000||raw.sale_ref!=null||raw.upfront_paid!=null) return {intent:'clarify'};
+      out.quantity=raw.quantity;
+      if(raw.amount!=null&&raw.unit_price!=null) return {intent:'clarify'};
+      if(out.intent!=='inventory_sale'&&raw.amount!=null) return {intent:'clarify'};
+      if(out.intent==='stock_in'&&(raw.unit_price!=null||raw.unit_cost!=null)) return {intent:'clarify'};
+      try {
+        if(raw.unit_price!=null) out.unit_price_cents=cents(raw.unit_price);
+        if(raw.unit_cost!=null) out.unit_cost_cents=cents(raw.unit_cost);
+        if(raw.amount!=null) out.amount_cents=cents(raw.amount);
+        if(out.intent==='inventory_sale'&&out.unit_cost_cents!=null) return {intent:'clarify'};
+        if(out.intent==='inventory_sale'&&out.unit_price_cents!=null) {
+          out.amount_cents=out.unit_price_cents*out.quantity;
+          if(!Number.isSafeInteger(out.amount_cents)||out.amount_cents>100000000000) return {intent:'clarify'};
+        }
+      } catch {return {intent:'clarify'};}
+      if(out.intent==='inventory_sale'&&raw.contact!=null) return {intent:'clarify'};
+    }
+    return out;
+  }
   if(queryIntents.has(out.intent)) {
     if(out.period==='range') {
       if(!validDate(raw.from_date)||!validDate(raw.to_date)||raw.from_date>raw.to_date) return {intent:'clarify'};
@@ -66,6 +99,16 @@ export function normalizeInput(raw) {
     if(only?.sale_ref!=null||only?.upfront_paid!=null) return {intent:'clarify'};
     return normalize(only);
   }
+  if(raw.operations.some(item=>inventoryMutations.has(item?.intent))) {
+    const operations=[];
+    for(const item of raw.operations) {
+      if(!item||!['opening_stock','stock_in','inventory_sale','sale','expense'].includes(item.intent)||item.ambiguous!==false||item.sale_ref!=null||item.upfront_paid!=null) return {intent:'clarify'};
+      const command=normalize(item);
+      if(command.intent==='clarify') return command;
+      operations.push(command);
+    }
+    return {intent:'inventory_batch',operations};
+  }
   const operations=[],linked=new Set();
   for(let i=0;i<raw.operations.length;i++) {
     const item=raw.operations[i];
@@ -102,6 +145,12 @@ export function normalizeInput(raw) {
 const pesoFormat=new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',minimumFractionDigits:0,maximumFractionDigits:0});
 export const money = n => {const value=BigInt(n),absolute=value<0n?-value:value;return `${value<0n?'-':''}${pesoFormat.format(absolute/100n)}.${String(absolute%100n).padStart(2,'0')}`;};
 const kinds={sale:'Venta',expense:'Gasto',receivable:'Cuenta por cobrar',payment:'Pago'};
+const productUnits=(label,quantity)=>{
+ if(quantity===1||!label) return label||'producto';
+ const [noun,...rest]=label.split(' ');
+ const plural=/ón$/i.test(noun)?noun.replace(/ón$/i,'ones'):/[aeiouáéíóú]$/i.test(noun)?`${noun}s`:`${noun}es`;
+ return [plural,...rest].join(' ');
+};
 const periodName=r=>({day:r.from===r.to?'el '+r.from:`del ${r.from} al ${r.to}`,week:'esta semana',last_week:'la semana pasada',month:'este mes',last_month:'el mes pasado',range:`del ${r.from} al ${r.to}`,all:'en tu historial'})[r.period]||`del ${r.from} al ${r.to}`;
 function compareSales(current,previous) {
  const now=BigInt(current),before=BigInt(previous),difference=now-before;
@@ -117,6 +166,30 @@ function topDays(days=[]) {
 }
 export function render(r) {
   switch(r.status) {
+    case 'inventory_recorded': case 'inventory_batch_recorded': {
+      const entries=r.operations||[];
+      const sales=entries.filter(e=>e.kind==='inventory_sale'||e.kind==='sale');
+      const stocked=entries.filter(e=>e.kind==='opening_stock'||e.kind==='stock_in');
+      const expenses=entries.filter(e=>e.kind==='expense');
+      const parts=[];
+      if(sales.length) parts.push(`Vendiste ${sales.map(e=>`${e.quantity||1} ${productUnits(e.product_label,e.quantity||1)} por ${money(e.amount_cents)}`).join(' y ')}`);
+      if(stocked.length) parts.push(`Registré ${stocked.map(e=>`${e.quantity} ${productUnits(e.product_label,e.quantity)}; quedan ${e.stock_remaining}`).join(' y ')}`);
+      if(expenses.length) parts.push(`${money(expenses.reduce((n,e)=>n+Number(e.amount_cents),0))} de gasto`);
+      if(sales.length===1&&sales[0].stock_remaining!=null) parts.push(`Te quedan ${sales[0].stock_remaining}`);
+      return `Listo. ${parts.join('. ')}.`;
+    }
+    case 'inventory_count': return r.products?.length?`Tienes ${r.total_quantity} ${productUnits(r.label||'piezas',Number(r.total_quantity))} registradas.`:'No encontré ese producto en tu inventario.';
+    case 'inventory_list': return r.products?.length?`Inventario: ${r.products.slice(0,20).map(p=>`${p.label}: ${p.quantity}`).join('; ')}${r.more?' (hay más productos)':''}.`:'Aún no tienes productos registrados en inventario.';
+    case 'inventory_top': return r.products?.length?`Tienes más de ${r.products[0].label}: ${r.products[0].quantity} piezas.`:'Aún no tienes productos con existencias.';
+    case 'inventory_value': {
+      if(!r.total_quantity) return 'Aún no tienes existencias registradas.';
+      const parts=[`Tienes ${r.total_quantity} piezas`];
+      if(r.sale_value_cents!=null) parts.push(`Valor potencial de venta: ${money(r.sale_value_cents)}`);
+      if(r.cost_value_cents!=null) parts.push(`Valor registrado a costo: ${money(r.cost_value_cents)}`);
+      if(r.unpriced_sale_count) parts.push(`${r.unpriced_sale_count} piezas sin precio de venta registrado`);
+      if(r.unpriced_cost_count&&r.cost_value_cents!=null) parts.push(`${r.unpriced_cost_count} piezas sin costo registrado`);
+      return `${parts.join('. ')}.`;
+    }
     case 'batch_recorded': {
       const ops=r.operations||[];
       const sum=kind=>ops.filter(op=>op.kind===kind).reduce((n,op)=>n+Number(op.amount_cents),0);
@@ -150,7 +223,7 @@ export function render(r) {
     case 'confirmation': return `${r.action==='delete_last'?'Anular':'Corregir'} tu último movimiento: ${kinds[r.kind]}, ${money(r.old_amount_cents)} MXN, ${r.date}${r.description?` (${r.description})`:''}.${r.action==='correct_last'?` Nuevo importe: ${money(r.new_amount_cents)} MXN.`:''}\nPara aplicar, escribe CONFIRMAR ${r.token}. Caduca en 10 minutos. O escribe CANCELAR.`;
     case 'changed': return r.action==='delete_last'?'Movimiento anulado. Conservé su historial.':`Movimiento corregido a ${money(r.amount_cents)} MXN. Conservé el importe anterior en el historial.`;
     case 'cancelled': return 'Cancelado. No cambié tus movimientos.';
-    case 'clarify': return ({invalid_period:'Indica una fecha o periodo válido que ya haya comenzado. No consulté cifras.',batch_invalid:'No registré ninguna operación del mensaje. Aclara el importe, la fecha o la cuenta pendiente y vuelve a enviarlo.',batch_target:'El último mensaje registró varias operaciones. Indica cuál deseas corregir; no cambié ningún movimiento.',no_debt:'No encontré una cuenta pendiente con ese nombre. No registré el pago.',multiple_debts:'Ese cliente tiene varias cuentas pendientes. No registré el pago; por ahora este MVP requiere una sola cuenta abierta por cliente.',overpayment:`El importe supera el saldo disponible (${money(r.balance_cents || 0)} MXN). No cambié el registro.`,no_last:'Todavía no tienes movimientos que corregir o anular.',expired:'Ese código no existe, ya se usó o caducó. Vuelve a solicitar la corrección o anulación.',changed:'El movimiento cambió desde la solicitud. Vuelve a solicitar la corrección o anulación.',linked_payments:'La cuenta tiene pagos vinculados. No puedo anularla ni reducirla por debajo de lo pagado.'})[r.reason] || 'No entendí la consulta o falta un dato claro. Prueba “¿Cuánto vendí esta semana?” o “Gasté $200 de gasolina”. No registré cambios.';
+    case 'clarify': return ({invalid_period:'Indica una fecha o periodo válido que ya haya comenzado. No consulté cifras.',batch_invalid:'No registré ninguna operación del mensaje. Aclara el importe, la fecha o la cuenta pendiente y vuelve a enviarlo.',batch_target:'El último mensaje registró varias operaciones. Indica cuál deseas corregir; no cambié ningún movimiento.',inventory_ambiguous:'Encontré varios productos parecidos. Indica marca, color, talla o modelo; no registré cambios.',inventory_missing:'No encontré ese producto. Revisa el nombre o regístralo primero; no registré cambios.',inventory_exists:'Ese producto ya tiene existencias. Para añadir unidades, dime cuántas llegaron.',stock_insufficient:`Tienes ${r.available_quantity} ${r.product_label||'piezas'} registradas. Revisa la cantidad o corrige tu inventario. No registré la venta.`,inventory_invalid:'No registré ninguna operación. Aclara el producto, la cantidad o el precio y vuelve a enviarlo.',no_debt:'No encontré una cuenta pendiente con ese nombre. No registré el pago.',multiple_debts:'Ese cliente tiene varias cuentas pendientes. No registré el pago; por ahora este MVP requiere una sola cuenta abierta por cliente.',overpayment:`El importe supera el saldo disponible (${money(r.balance_cents || 0)} MXN). No cambié el registro.`,no_last:'Todavía no tienes movimientos que corregir o anular.',expired:'Ese código no existe, ya se usó o caducó. Vuelve a solicitar la corrección o anulación.',changed:'El movimiento cambió desde la solicitud. Vuelve a solicitar la corrección o anulación.',linked_payments:'La cuenta tiene pagos vinculados. No puedo anularla ni reducirla por debajo de lo pagado.'})[r.reason] || 'No entendí la consulta o falta un dato claro. Prueba “¿Cuánto vendí esta semana?” o “Gasté $200 de gasolina”. No registré cambios.';
     default: throw new Error('Unknown result');
   }
 }

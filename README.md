@@ -2,7 +2,23 @@
 
 Asistente de cuentas para micronegocios en México. Canal previsto: WhatsApp; incluye un chat pequeño para probar el mismo servicio. Proyecto nuevo e independiente, sin vínculo a recursos ni proyectos de otros clientes.
 
-**Estado:** texto y notas de voz usan el mismo servicio financiero; permiten registrar lotes y consultar cifras reales del negocio en lenguaje natural. El alta por invitación y las métricas internas siguen vigentes. Sprint 5.6 renueva la presentación comercial y la experiencia móvil sin modificar la lógica financiera. La integración Meta sigue pendiente.
+**Estado:** texto y notas de voz usan el mismo servicio para registrar operaciones financieras e inventario, procesar lotes y consultar cifras reales del negocio. El alta por invitación y las métricas internas siguen vigentes. La integración Meta sigue pendiente.
+
+## Inventario conversacional (Sprint 5.7)
+
+Aplica `supabase/migrations/005_inventory.sql` **una sola vez**, después de `004_pilot.sql`, únicamente al proyecto Supabase confirmado para Vendixa. La migración añade `products`, `inventory_movements`, `inventory_audit` y la vista `inventory_stock`; no cambia movimientos históricos. Productos e historial están aislados por `business_id`, con RLS de lectura por membresía y escritura sólo mediante el servicio. Cada producto puede tener nombre, marca, variante, color, talla, SKU, precio de venta, costo unitario y estado activo/inactivo. La búsqueda de productos usa atributos exactos sin coincidencias difusas; cuando falta información para distinguir variantes, Vendixa pide aclaración.
+
+Los movimientos `opening_stock`, `stock_in`, `sale`, `adjustment_in`, `adjustment_out` y `reversal` conservan cantidades firmadas, origen, actor, mensaje, fecha local del negocio y precios/costos relevantes. El stock se obtiene sumando esos movimientos, no de un contador editable. Por ahora la conversación crea altas iniciales, entradas y ventas; los tipos de ajuste quedan en el modelo para futuras correcciones explícitas. Una apertura repetida del mismo producto pide usar una entrada de inventario. No se aceptan existencias negativas.
+
+Ejemplos: “Tengo 100 gorras marca X a $1,500 cada una y 100 marca Y a $1,200”; “Me llegaron 50 gorras marca X”; “Vendí 50 gorras marca X en $1,500 cada una”; “¿Cuántas gorras marca X me quedan?”; “¿Qué tengo en inventario?”; “¿Cuál es mi inventario en pesos?” y “¿Qué producto tengo más?”. La voz se transcribe y pasa por **el mismo** intérprete, validador y RPC que el texto. El servicio no depende del canal: una futura integración WhatsApp podrá reutilizarlo sin otro inventario.
+
+Una venta de inventario calcula cantidad × precio en centavos, inserta el movimiento financiero y la salida de unidades en **una transacción**, con auditorías separadas vinculadas al mismo mensaje. Si un lote contiene un producto ambiguo, stock insuficiente o una operación inválida, no guarda ninguna de sus operaciones. El mismo identificador de mensaje no duplica la venta ni la salida. El precio explícito de la venta prevalece sólo para esa operación; no modifica el precio estándar del producto. Si no se indica precio en una venta, se usa el precio estándar registrado o se pide aclaración.
+
+Al anular una venta de inventario mediante la confirmación existente, el movimiento financiero se anula y se registra una `reversal` que devuelve las piezas, sin borrar eventos. Una corrección de importe cambia sólo el importe financiero, no la cantidad; para cambiar unidades de una venta se debe anular y registrar de nuevo. Una corrección genérica de un mensaje con varias ventas sigue pidiendo identificar la operación. En esta versión, un lote puede combinar altas, entradas, ventas de inventario y ventas/gastos simples; las cuentas por cobrar y pagos mezclados con inventario requieren mensajes separados.
+
+La valoración distingue **valor potencial de venta** (existencias × precio estándar) y **valor registrado a costo** (existencias × costo unitario). Si falta alguno de esos datos, la respuesta indica cuántas piezas no están cubiertas; nunca llama utilidad, ganancia o valor contable a esas cifras. No se implementan proveedores, compras, almacenes múltiples, códigos de barras, lotes, caducidades, facturación ni SAT.
+
+Para verificar localmente: `npm test` cubre altas, variantes, ventas, lotes, reversión, valoración, voz, RLS, idempotencia y las pruebas anteriores; `npm run check` revisa sintaxis. La migración y una prueba real con Gemini/Supabase deben verificarse antes de publicar la nueva ruta en Vercel.
 
 ## Marca e instalación
 

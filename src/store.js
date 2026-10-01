@@ -29,6 +29,7 @@ export class SupabaseStore {
   }
   process(args) {return this.rpc('process_command',args);}
   batch(args) {return this.rpc('process_batch',args);}
+  inventory(args) {return this.rpc('process_inventory_message',args);}
   query(args) {return this.rpc('process_financial_query',args);}
   quota(actor,business,limits={}) {return business?this.rpc('consume_pilot_quota',{p_actor:actor,p_business:business,p_minute_limit:limits.perMinute||30,p_daily_limit:limits.perDay||250}):this.rpc('consume_quota',{p_actor:actor});}
   createPilotBusiness(actor,name,timezone) {return this.rpc('create_pilot_business',{p_actor:actor,p_name:name,p_timezone:timezone});}

@@ -23,6 +23,8 @@ export async function createLocalStore(path) {
  await db.exec('alter table auth.users add column if not exists email text');
  const pilot=await db.query("select to_regprocedure('public.create_pilot_business(uuid,text,text)') as name");
  if(!pilot.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/004_pilot.sql',import.meta.url),'utf8'));
+ const inventory=await db.query("select to_regprocedure('public.process_inventory_message(uuid,uuid,text,text,text,text,jsonb,jsonb)') as name");
+ if(!inventory.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/005_inventory.sql',import.meta.url),'utf8'));
  const store={
   db,
   async seed(user=DEMO_USER,business=DEMO_BUSINESS,name='Mi negocio de prueba',timezone='America/Mexico_City') {
@@ -36,6 +38,7 @@ export async function createLocalStore(path) {
   async receipt(business,channel,id) {return (await db.query('select id,actor_id,fingerprint,response,media from messages where business_id=$1 and channel=$2 and external_id=$3',[business,channel,id])).rows[0];},
   async process(a) {return (await db.query('select process_command($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_command),JSON.stringify(a.p_media)])).rows[0].result;},
   async batch(a) {return (await db.query('select process_batch($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_commands),JSON.stringify(a.p_media)])).rows[0].result;},
+  async inventory(a) {return (await db.query('select process_inventory_message($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_commands),JSON.stringify(a.p_media)])).rows[0].result;},
   async query(a) {return (await db.query('select process_financial_query($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_command),JSON.stringify(a.p_media)])).rows[0].result;},
   async quota(actor,business,limits={}) {return (await db.query('select consume_pilot_quota($1,$2,$3,$4) as allowed',[actor,business,limits.perMinute||30,limits.perDay||250])).rows[0].allowed;},
   async createPilotBusiness(actor,name,timezone) {return (await db.query('select create_pilot_business($1,$2,$3) as value',[actor,name,timezone])).rows[0].value;},
