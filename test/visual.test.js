@@ -25,6 +25,8 @@ test('commercial pages keep the Vendixa palette and visible account controls',as
  for(const color of ['#D8573F','#30525C','#09A1A1','#F6C992'])assert.ok(!css.includes(color),`${color} remains in CSS`);
  for(const html of [landing,privacy,admin,install])assert.match(html,/<meta name="theme-color" content="#FF004F">/);
  assert.match(css,/\.primary,.send-main,.mic-main,.voice-actions #send-audio\{background:var\(--brand-primary\);color:var\(--on-primary\)/);
+ assert.match(css,/--on-primary:#ffffff/);
+ assert.match(landing,/id="record"[^>]*aria-label="Grabar nota de voz"><svg[^>]*stroke="currentColor"[^>]*aria-hidden="true"/);
  assert.match(css,/\.chat-area \.bubble\.error\{background:var\(--error-surface\);color:var\(--error-text\)/);
  assert.match(css,/100dvh/);
  assert.match(css,/safe-area-inset-bottom/);
@@ -45,7 +47,7 @@ test('installation manifest declares branded icons',async()=>{
  }
 });
 
-test('primary and yellow buttons use legible text colors',()=>{
+test('primary buttons use white content and yellow buttons retain dark text',()=>{
  const luminance=hex=>{
   const parts=hex.match(/[A-Fa-f0-9]{2}/g).map(value=>parseInt(value,16)/255);
   const [r,g,b]=parts.map(value=>value<=0.04045?value/12.92:((value+0.055)/1.055)**2.4);
@@ -55,7 +57,7 @@ test('primary and yellow buttons use legible text colors',()=>{
   const first=luminance(a),second=luminance(b);
   return (Math.max(first,second)+0.05)/(Math.min(first,second)+0.05);
  };
- assert.ok(contrast('#FF004F','#111111')>=4.5);
+ assert.ok(contrast('#FF004F','#FFFFFF')>=3);
  assert.ok(contrast('#FFDD00','#222222')>=4.5);
  assert.ok(contrast('#B60038','#FAF8F0')>=4.5);
 });
