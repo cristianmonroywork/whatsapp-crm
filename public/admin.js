@@ -26,8 +26,8 @@ async function load(){
 }
 document.getElementById('commercial-filters').addEventListener('click',event=>{const button=event.target.closest('[data-filter]');if(!button)return;filter=button.dataset.filter;for(const b of document.querySelectorAll('[data-filter]'))b.setAttribute('aria-pressed',String(b===button));renderCommercial();});
 form.addEventListener('submit',async event=>{event.preventDefault();const data=new FormData(form),businessId=data.get('businessId'),action=data.get('action'),name=subscriptions.find(b=>b.id===businessId)?.name;
- if(!name||prompt(`Escribe ${name} para confirmar ${action}:`)!==name)return;
+ if(!name||data.get('confirmName')!==name){status.textContent='Escribe el nombre exacto del negocio para confirmar.';return;}
  const amount=data.get('amount'),payload={businessId,action,source:data.get('source'),startsAt:data.get('startsAt')?new Date(data.get('startsAt')).toISOString():null,endsAt:data.get('endsAt')?new Date(data.get('endsAt')).toISOString():null,amountCents:amount===''?null:Math.round(Number(amount)*100),note:data.get('note')};
- const button=form.querySelector('button[type=submit]');button.disabled=true;try{const response=await fetch('/api/admin/subscription-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw Error(result.error||'No pude guardar el acceso.');await load();status.textContent=`Acceso de ${name} actualizado por el operador.`;}catch(error){status.textContent=error.message;}finally{button.disabled=false;}
+ const button=form.querySelector('button[type=submit]');button.disabled=true;try{const response=await fetch('/api/admin/subscription-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw Error(result.error||'No pude guardar el acceso.');form.elements.confirmName.value='';await load();status.textContent=`Acceso de ${name} actualizado por el operador.`;}catch(error){status.textContent=error.message;}finally{button.disabled=false;}
 });
 await load();
