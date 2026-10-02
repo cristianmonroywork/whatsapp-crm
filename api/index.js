@@ -3,7 +3,7 @@ import {interpret} from '../src/interpret.js';
 import {handleMessage,messageFingerprint} from '../src/service.js';
 import {MAX_AUDIO_BYTES,validateAudio,transcribeAudio} from '../src/voice.js';
 import {validSignature,receiveWhatsApp} from '../src/whatsapp.js';
-import {timingSafeEqual} from 'node:crypto';
+import {commercialConfig,createCheckout,handleMpWebhook} from '../src/billing.js';
 
 export async function readBody(req,limit=65536) {
   let length=0;const chunks=[];
@@ -14,11 +14,11 @@ function reply(res,status,body) {res.statusCode=status;res.setHeader('Content-Ty
 function cookie(req,name) {return (req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(`${name}=`))?.slice(name.length+1);}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const limit=(value,fallback,max)=>{const n=Number(value);return Number.isInteger(n)&&n>0&&n<=max?n:fallback;};
-const same=(a,b)=>{const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&x.length>0&&timingSafeEqual(x,y);};
 async function touch(store,actor,business) {try {await store.presence?.(actor,business);} catch {}}
 function friendlyError(error,status) {
  if(['El audio está vacío.','El audio supera 3 MB.','El audio supera 60 segundos.','No pude leer el audio.','Envía sólo audio.','No pude comprobar la duración del audio.'].includes(error?.message))return error.message;
  if(status===401)return 'Tu sesión venció o las credenciales son incorrectas. Entra de nuevo.';
+ if(status===402)return 'Tu acceso venció. Tus datos siguen disponibles. Activa Vendixa para continuar.';
  if(status===403)return 'No tienes acceso a ese negocio.';
  if(status===404)return 'No encontré esa página.';
  if(status===409)return 'Esa cuenta o solicitud ya existe. Revisa tus datos.';
@@ -38,6 +38,11 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
    if(env.VERCEL && (demoUser || env.APP_MODE==='demo')) throw new Error('Demo mode forbidden on Vercel');
    path=new URL(req.url,'http://local').pathname;
    if(path==='/api/health') return reply(res,200,{ok:true,mode:demoUser?'demo':'live'});
+   if(path==='/api/plan'&&req.method==='GET') {
+    const plan=commercialConfig(env);
+    return reply(res,200,{plan:plan.plan,price_cents:plan.priceCents,currency:plan.currency,period:plan.period,trial_days:plan.trialDays,
+     checkout_available:!!(env.MP_TEST_ACCESS_TOKEN?.startsWith('TEST-')&&env.MP_WEBHOOK_SECRET&&/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||''))});
+   }
    if(!store) store=new SupabaseStore(env,fetcher);
    if(path==='/api/whatsapp') {
     if(env.WHATSAPP_ENABLED!=='true') return reply(res,503,{error:'WhatsApp no habilitado.'});
@@ -53,14 +58,19 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
     await receiveWhatsApp(JSON.parse(raw.toString()),{store,interpreter,env,fetcher});
     return reply(res,200,{received:true});
    }
+   if(path==='/api/mercado-pago/webhook'&&req.method==='POST') {
+    const body=JSON.parse((await readBody(req,16384)).toString());
+    const result=await handleMpWebhook({store,query:new URL(req.url,'http://local').searchParams,headers:req.headers,body,env,fetcher});
+    return reply(res,200,{received:true,...result});
+   }
    if(req.method==='POST' && req.headers.origin) {
     const origin=new URL(req.headers.origin);
     if(origin.host!==req.headers.host) return reply(res,403,{error:'Origen inválido.'});
    }
    if(path==='/api/signup' && req.method==='POST') {
-    if(demoUser||env.PILOT_SIGNUP_ENABLED!=='true'||String(env.PILOT_INVITE_CODE||'').length<16) return reply(res,404,{error:'El registro de nuevas cuentas no está disponible.'});
-    const {email,password,inviteCode}=JSON.parse((await readBody(req,8192)).toString());
-    if(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)||email.length>254||typeof password!=='string'||password.length<10||password.length>128||!same(inviteCode,env.PILOT_INVITE_CODE)) return reply(res,400,{error:'Revisa el correo, la contraseña y el código de invitación.'});
+    if(demoUser||(env.COMMERCIAL_SIGNUP_ENABLED??env.PILOT_SIGNUP_ENABLED)!=='true') return reply(res,404,{error:'El registro de nuevas cuentas no está disponible.'});
+    const {email,password}=JSON.parse((await readBody(req,8192)).toString());
+    if(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)||email.length>254||typeof password!=='string'||password.length<10||password.length>128) return reply(res,400,{error:'Revisa el correo y la contraseña.'});
     const data=await store.auth('signup',{body:{email:email.trim(),password}});
     if(data.access_token) res.setHeader('Set-Cookie',`cc_session=${data.access_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.min(data.expires_in||3600,3600)}${env.VERCEL?'; Secure':''}`);
     return reply(res,200,{ok:true,checkEmail:!data.access_token});
@@ -79,7 +89,8 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
    }
    const token=cookie(req,'cc_session');
    if(!demoUser&&!token) return reply(res,401,{error:'Inicia sesión para continuar.'});
-   actor=demoUser || (await store.auth('user',{token})).id;
+   const authUser=demoUser?{id:demoUser}:await store.auth('user',{token});
+   actor=authUser.id;
    if(path==='/api/session'&&req.method==='GET') {
     const list=await store.businesses(actor);
     await Promise.all(list.filter(b=>b.is_pilot).map(b=>store.presence(actor,b.id)));
@@ -89,8 +100,32 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
     const input=JSON.parse((await readBody(req,8192)).toString());
     const name=typeof input.name==='string'&&input.name.trim()?input.name.trim():'Mi negocio';
     if(name.length>120||typeof input.timezone!=='string'||input.timezone.length>100) return reply(res,400,{error:'Revisa el nombre y la zona horaria.'});
-    const result=await store.createPilotBusiness(actor,name,input.timezone);
+    const result=demoUser?await store.createPilotBusiness(actor,name,input.timezone):await store.createBusinessTrial(actor,name,input.timezone,commercialConfig(env).trialDays);
     return reply(res,200,result);
+   }
+   if(path==='/api/access'&&req.method==='GET') {
+    business=new URL(req.url,'http://local').searchParams.get('businessId');
+    if(!uuid.test(business||''))return reply(res,400,{error:'Negocio inválido.'});
+    if(!await store.membership(actor,business))return reply(res,403,{error:'No tienes acceso a ese negocio.'});
+    return reply(res,200,await store.access(actor,business));
+   }
+   if(path==='/api/checkout'&&req.method==='POST') {
+    const input=JSON.parse((await readBody(req,8192)).toString());
+    if(!uuid.test(input.businessId||'')||!authUser.email)return reply(res,400,{error:'Negocio inválido.'});
+    business=input.businessId;
+    return reply(res,200,await createCheckout({store,actor,business,email:authUser.email,env,fetcher}));
+   }
+   if(path==='/api/admin/subscriptions'&&req.method==='GET') {
+    if(!await store.operator(actor))return reply(res,403,{error:'No tienes acceso al panel.'});
+    return reply(res,200,{businesses:await store.commercialDashboard(actor)});
+   }
+   if(path==='/api/admin/subscription-action'&&req.method==='POST') {
+    if(!await store.operator(actor))return reply(res,403,{error:'No tienes acceso al panel.'});
+    const input=JSON.parse((await readBody(req,8192)).toString());
+    if(!uuid.test(input.businessId||'')||!['activate','renew','suspend','cancel'].includes(input.action)||
+     (input.amountCents!=null&&(!Number.isSafeInteger(input.amountCents)||input.amountCents<0))||
+     (input.note!=null&&(typeof input.note!=='string'||input.note.length>500)))return reply(res,400,{error:'Revisa los datos de la activación.'});
+    return reply(res,200,await store.operatorSubscriptionAction(actor,input));
    }
    if(path==='/api/admin/pilots'&&req.method==='GET') {
     if(!await store.operator(actor)) return reply(res,403,{error:'No tienes acceso al panel.'});

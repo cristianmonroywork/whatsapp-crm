@@ -78,11 +78,11 @@ test('empty period has a useful answer without technical text',async()=>{
  assert.match(result.text,/Aún no tienes ventas registradas esta semana/);
 });
 
-test('signup uses invite code and never sends service role to browser',async()=>{
+test('commercial signup is open when enabled and never sends service role to browser',async()=>{
  const seen=[];const fake={auth:async(path,{body})=>{seen.push({path,email:body.email});return {user:{id:randomUUID()},access_token:'local-test-token',expires_in:3600};}};
- await server(createHandler({store:fake,env:{PILOT_SIGNUP_ENABLED:'true',PILOT_INVITE_CODE:'invitacion-prueba',VERCEL:'1'}}),async root=>{
-  const invalid=await fetch(`${root}/api/signup`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'pilot@example.test',password:'clave-segura-de-prueba',inviteCode:'incorrecto'})});assert.equal(invalid.status,400);
-  const valid=await fetch(`${root}/api/signup`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'pilot@example.test',password:'clave-segura-de-prueba',inviteCode:'invitacion-prueba'})});assert.equal(valid.status,200);assert.match(valid.headers.get('set-cookie'),/HttpOnly/);assert.match(valid.headers.get('set-cookie'),/Secure/);assert.deepEqual(seen,[{path:'signup',email:'pilot@example.test'}]);
+ await server(createHandler({store:fake,env:{COMMERCIAL_SIGNUP_ENABLED:'true',VERCEL:'1'}}),async root=>{
+  const invalid=await fetch(`${root}/api/signup`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'pilot@example.test',password:'short'})});assert.equal(invalid.status,400);
+  const valid=await fetch(`${root}/api/signup`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'pilot@example.test',password:'clave-segura-de-prueba'})});assert.equal(valid.status,200);assert.match(valid.headers.get('set-cookie'),/HttpOnly/);assert.match(valid.headers.get('set-cookie'),/Secure/);assert.deepEqual(seen,[{path:'signup',email:'pilot@example.test'}]);
  });
 });
 

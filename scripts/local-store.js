@@ -21,6 +21,7 @@ export async function createLocalStore(path) {
  const queries=await db.query("select to_regprocedure('public.process_financial_query(uuid,uuid,text,text,text,text,jsonb,jsonb)') as name");
  if(!queries.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/003_queries.sql',import.meta.url),'utf8'));
  await db.exec('alter table auth.users add column if not exists email text');
+ await db.exec('alter table auth.users add column if not exists email_confirmed_at timestamptz');
  const pilot=await db.query("select to_regprocedure('public.create_pilot_business(uuid,text,text)') as name");
  if(!pilot.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/004_pilot.sql',import.meta.url),'utf8'));
  const inventory=await db.query("select to_regprocedure('public.process_inventory_message(uuid,uuid,text,text,text,text,jsonb,jsonb)') as name");
@@ -29,6 +30,8 @@ export async function createLocalStore(path) {
  if(!units.rows.length) await db.exec(await readFile(new URL('../supabase/migrations/006_inventory_units.sql',import.meta.url),'utf8'));
  const unpriced=await db.query("select 1 from pg_constraint where conname='inventory_movements_kind_check' and pg_get_constraintdef(oid) like '%sale_unpriced%'");
  if(!unpriced.rows.length) await db.exec(await readFile(new URL('../supabase/migrations/007_unpriced_stock_sales.sql',import.meta.url),'utf8'));
+ const commercial=await db.query("select to_regprocedure('public.create_business_trial(uuid,text,text,integer)') as name");
+ if(!commercial.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/008_commercial_access.sql',import.meta.url),'utf8'));
  const store={
   db,
   async seed(user=DEMO_USER,business=DEMO_BUSINESS,name='Mi negocio de prueba',timezone='America/Mexico_City') {
@@ -36,6 +39,7 @@ export async function createLocalStore(path) {
    await db.query('insert into profiles(id,display_name) values($1,$2) on conflict do nothing',[user,'Vendedor de prueba']);
    await db.query('insert into businesses(id,name,timezone) values($1,$2,$3) on conflict do nothing',[business,name,timezone]);
    await db.query('insert into memberships(business_id,user_id) values($1,$2) on conflict do nothing',[business,user]);
+   await db.query("insert into business_subscriptions(business_id,status,source,starts_at,current_period_start,current_period_end) values($1,'active','courtesy',now(),now(),now()+interval '30 days') on conflict do nothing",[business]);
   },
   async membership(actor,business) {return (await db.query('select 1 from memberships m join businesses b on b.id=m.business_id where m.business_id=$1 and m.user_id=$2 and b.is_active',[business,actor])).rows.length===1;},
   async businesses(actor) {return (await db.query('select b.id,b.name,b.timezone,b.is_pilot from businesses b join memberships m on b.id=m.business_id where m.user_id=$1 and b.is_active',[actor])).rows;},
@@ -45,7 +49,16 @@ export async function createLocalStore(path) {
   async inventory(a) {return (await db.query('select process_inventory_message($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_commands),JSON.stringify(a.p_media)])).rows[0].result;},
   async query(a) {return (await db.query('select process_financial_query($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) as result',[a.p_business,a.p_actor,a.p_channel,a.p_external_id,a.p_fingerprint,a.p_content,JSON.stringify(a.p_command),JSON.stringify(a.p_media)])).rows[0].result;},
   async quota(actor,business,limits={}) {return (await db.query('select consume_pilot_quota($1,$2,$3,$4) as allowed',[actor,business,limits.perMinute||30,limits.perDay||250])).rows[0].allowed;},
-  async createPilotBusiness(actor,name,timezone) {return (await db.query('select create_pilot_business($1,$2,$3) as value',[actor,name,timezone])).rows[0].value;},
+  async createPilotBusiness(actor,name,timezone) {const b=(await db.query('select create_pilot_business($1,$2,$3) as value',[actor,name,timezone])).rows[0].value;
+   await db.query("insert into business_subscriptions(business_id,status,source,starts_at,current_period_start,current_period_end) values($1,'active','courtesy',now(),now(),now()+interval '30 days') on conflict do nothing",[b.id]);return b;},
+  async createBusinessTrial(actor,name,timezone,days) {return (await db.query('select create_business_trial($1,$2,$3,$4) as value',[actor,name,timezone,days])).rows[0].value;},
+  async access(actor,business) {return (await db.query('select commercial_access_state($1,$2) as value',[actor,business])).rows[0].value;},
+  async operatorSubscriptionAction(actor,input) {return (await db.query('select operator_subscription_action($1,$2,$3,$4,$5,$6,$7,$8) as value',[actor,input.businessId,input.action,input.source||null,input.startsAt||null,input.endsAt||null,input.amountCents??null,input.note||null])).rows[0].value;},
+  async createCheckoutAttempt(actor,business) {return (await db.query('select create_checkout_attempt($1,$2) as value',[actor,business])).rows[0].value;},
+  async linkCheckoutAttempt(id,provider,url) {await db.query('select link_checkout_attempt($1,$2,$3)',[id,provider,url]);},
+  async checkoutAttempt(id) {return (await db.query('select id,business_id,provider_subscription_id from checkout_attempts where id=$1',[id])).rows[0];},
+  async applyMpEvent(input) {return (await db.query('select apply_verified_mp_event($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) as value',[input.p_event_key,input.p_topic,input.p_resource_id,input.p_attempt,input.p_provider_subscription,input.p_status,input.p_amount_cents,input.p_currency,input.p_paid_at,input.p_customer])).rows[0].value;},
+  async commercialDashboard(actor) {return (await db.query('select commercial_dashboard($1) as value',[actor])).rows[0].value;},
   async operator(actor) {return (await db.query('select 1 from pilot_operators where user_id=$1',[actor])).rows.length===1;},
   async dashboard(actor) {return (await db.query('select pilot_dashboard($1) as value',[actor])).rows[0].value;},
   async deactivatePilot(actor,business,name,phrase) {return (await db.query('select deactivate_pilot_business($1,$2,$3,$4) as value',[actor,business,name,phrase])).rows[0].value;},

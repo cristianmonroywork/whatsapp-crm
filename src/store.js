@@ -21,8 +21,17 @@ export class SupabaseStore {
   }
   async businesses(actor) {
     const memberships=await this.request(`memberships?user_id=eq.${encodeURIComponent(actor)}&select=businesses(id,name,timezone,is_pilot,is_active)`);
-    return memberships.map(m=>m.businesses).filter(b=>b?.is_active);
+    const list=memberships.map(m=>m.businesses).filter(b=>b?.is_active);
+    return Promise.all(list.map(async b=>({...b,access:await this.access(actor,b.id)})));
   }
+  access(actor,business) {return this.rpc('commercial_access_state',{p_actor:actor,p_business:business});}
+  createBusinessTrial(actor,name,timezone,days) {return this.rpc('create_business_trial',{p_actor:actor,p_name:name,p_timezone:timezone,p_trial_days:days});}
+  operatorSubscriptionAction(actor,input) {return this.rpc('operator_subscription_action',{p_actor:actor,p_business:input.businessId,p_action:input.action,p_source:input.source||null,p_start:input.startsAt||null,p_end:input.endsAt||null,p_amount_cents:input.amountCents??null,p_note:input.note||null});}
+  createCheckoutAttempt(actor,business) {return this.rpc('create_checkout_attempt',{p_actor:actor,p_business:business});}
+  linkCheckoutAttempt(id,provider,url) {return this.rpc('link_checkout_attempt',{p_attempt:id,p_provider_subscription:provider,p_init_point:url});}
+  async checkoutAttempt(id) {return (await this.request(`checkout_attempts?id=eq.${encodeURIComponent(id)}&select=id,business_id,provider_subscription_id`))[0];}
+  applyMpEvent(input) {return this.rpc('apply_verified_mp_event',input);}
+  async commercialDashboard(actor) {return this.rpc('commercial_dashboard',{p_actor:actor});}
   async receipt(business,channel,id) {
     const rows=await this.request(`messages?business_id=eq.${encodeURIComponent(business)}&channel=eq.${channel}&external_id=eq.${encodeURIComponent(id)}&select=id,actor_id,fingerprint,response,media`);
     return rows[0];
