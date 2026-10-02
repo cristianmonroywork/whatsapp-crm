@@ -1,6 +1,7 @@
 import {createHmac,timingSafeEqual} from 'node:crypto';
 
 const mpBase='https://api.mercadopago.com';
+const testToken=token=>typeof token==='string'&&/^(?:TEST-|APP_USR-)/.test(token);
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function commercialConfig(env=process.env){
  const trialDays=Number(env.VENDIXA_TRIAL_DAYS||7),price=Number(env.VENDIXA_PLAN_PRICE_MXN||199);
@@ -23,14 +24,25 @@ export function verifyMpSignature({signature,requestId,dataId,secret,now=Date.no
  return timingSafeEqual(Buffer.from(expected,'hex'),Buffer.from(values.v1,'hex'));
 }
 export async function mpRequest(path,{token,method='GET',body,fetcher=fetch}={}){
- if(!token?.startsWith('TEST-'))throw new Error('Only Mercado Pago test credentials are permitted');
+ if(!testToken(token))throw new Error('Mercado Pago credential format is invalid');
  const response=await fetcher(`${mpBase}${path}`,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(12000)});
  if(!response.ok)throw Object.assign(new Error('Mercado Pago request failed'),{status:503});
  return response.json();
 }
+export async function verifyMpTestSeller({token,fetcher=fetch}){
+ if(!testToken(token))return false;
+ if(token.startsWith('TEST-'))return true;
+ const response=await fetcher('https://api.mercadolibre.com/users/me',{
+  headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(12000)
+ });
+ if(!response.ok)return false;
+ const seller=await response.json();
+ return Array.isArray(seller.tags)&&seller.tags.includes('test_user');
+}
 export async function createCheckout({store,actor,business,email,env=process.env,fetcher=fetch}){
  const config=commercialConfig(env);
  if(!env.MP_TEST_ACCESS_TOKEN||!env.MP_WEBHOOK_SECRET||!/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||''))throw Object.assign(new Error('Checkout unavailable'),{status:503});
+ if(!await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher}))throw Object.assign(new Error('Test seller verification failed'),{status:503});
  const attempt=await store.createCheckoutAttempt(actor,business);
  if(attempt.url)return {url:attempt.url,plan:config.plan,price_cents:config.priceCents,currency:'MXN'};
  const response=await mpRequest('/preapproval',{token:env.MP_TEST_ACCESS_TOKEN,method:'POST',fetcher,body:{reason:'Vendixa mensual',external_reference:attempt.id,payer_email:email,
@@ -50,6 +62,7 @@ export async function handleMpWebhook({store,query,headers,body,env=process.env,
  if(!['payment','subscription_preapproval','subscription_authorized_payment'].includes(type))return {ignored:true};
  if(!/^[-\w]{1,160}$/.test(String(dataId)))throw Object.assign(new Error('Invalid provider resource'),{status:400});
  if(!env.MP_TEST_ACCESS_TOKEN)throw Object.assign(new Error('Checkout unavailable'),{status:503});
+ if(!await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher}))throw Object.assign(new Error('Test seller verification failed'),{status:503});
  let resource,topic,providerSubscription,paymentId=String(dataId);
  if(type==='payment'){
   resource=await mpRequest(`/v1/payments/${encodeURIComponent(dataId)}`,{token:env.MP_TEST_ACCESS_TOKEN,fetcher});
@@ -67,6 +80,7 @@ export async function handleMpWebhook({store,query,headers,body,env=process.env,
  }
  if(String(resource.id)!==String(dataId)||!providerSubscription)return {ignored:true};
  const subscription=type==='subscription_preapproval'?resource:await mpRequest(`/preapproval/${encodeURIComponent(providerSubscription)}`,{token:env.MP_TEST_ACCESS_TOKEN,fetcher});
+ if(resource.live_mode===true||subscription.live_mode===true)return {ignored:true};
  if(String(subscription.id)!==String(providerSubscription)||!uuid.test(String(subscription.external_reference||'')))return {ignored:true};
  if(topic!=='subscription'&&subscription.status!=='authorized')return {ignored:true};
  const attempt=await store.checkoutAttempt(subscription.external_reference);

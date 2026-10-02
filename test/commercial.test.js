@@ -4,7 +4,7 @@ import {createHmac,randomUUID} from 'node:crypto';
 import {createLocalStore,DEMO_USER as operator,DEMO_BUSINESS as existing} from '../scripts/local-store.js';
 import {handleMessage} from '../src/service.js';
 import {base} from '../src/interpret.js';
-import {commercialConfig,createCheckout,handleMpWebhook,verifyMpSignature} from '../src/billing.js';
+import {commercialConfig,createCheckout,handleMpWebhook,verifyMpSignature,verifyMpTestSeller} from '../src/billing.js';
 import {createServer} from 'node:http';
 import {createHandler} from '../api/index.js';
 let store,user,business;
@@ -79,6 +79,23 @@ test('verified test checkout, approved webhook, duplicate and renewal are atomic
  assert.equal((await store.db.query('select count(*)::int as n from commercial_payments where business_id=$1',[business])).rows[0].n,2);
  assert.equal((await store.db.query("select count(*)::int as n from commercial_audit where business_id=$1 and event_type='payment_approved'",[business])).rows[0].n,2);
  assert.equal((await store.db.query("select count(*)::int as n from commercial_audit where business_id=$1 and event_type in ('subscription_activated','subscription_renewed')",[business])).rows[0].n,2);
+});
+
+test('APP_USR checkout requires provider-confirmed test seller before any write',async()=>{
+ const env={MP_TEST_ACCESS_TOKEN:'APP_USR-local-only',MP_WEBHOOK_SECRET:'local-secret',VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
+ let calls=0;
+ const productionFetcher=async url=>{calls++;assert.equal(url,'https://api.mercadolibre.com/users/me');return {ok:true,json:async()=>({tags:['normal']})};};
+ assert.equal(await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher:productionFetcher}),false);
+ await assert.rejects(createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:productionFetcher}),e=>e.status===503);
+ assert.equal(calls,2);
+ assert.equal((await store.db.query('select count(*)::int as n from checkout_attempts where business_id=$1',[business])).rows[0].n,0);
+ const testFetcher=async(url,options)=>{
+  if(url==='https://api.mercadolibre.com/users/me')return {ok:true,json:async()=>({tags:['normal','test_user']})};
+  assert.equal(url,'https://api.mercadopago.com/preapproval');assert.equal(options.headers.Authorization,`Bearer ${env.MP_TEST_ACCESS_TOKEN}`);
+  return {ok:true,json:async()=>({id:'sub-test',init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=sub-test'})};
+ };
+ const checkout=await createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:testFetcher});
+ assert.match(checkout.url,/sub-test/);
 });
 
 test('webhook rejects forgery, unknown binding and wrong amount',async()=>{

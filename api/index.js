@@ -3,7 +3,7 @@ import {interpret} from '../src/interpret.js';
 import {handleMessage,messageFingerprint} from '../src/service.js';
 import {MAX_AUDIO_BYTES,validateAudio,transcribeAudio} from '../src/voice.js';
 import {validSignature,receiveWhatsApp} from '../src/whatsapp.js';
-import {commercialConfig,createCheckout,handleMpWebhook} from '../src/billing.js';
+import {commercialConfig,createCheckout,handleMpWebhook,verifyMpTestSeller} from '../src/billing.js';
 
 export async function readBody(req,limit=65536) {
   let length=0;const chunks=[];
@@ -41,7 +41,7 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
    if(path==='/api/plan'&&req.method==='GET') {
     const plan=commercialConfig(env);
     return reply(res,200,{plan:plan.plan,price_cents:plan.priceCents,currency:plan.currency,period:plan.period,trial_days:plan.trialDays,
-     checkout_available:!!(env.MP_TEST_ACCESS_TOKEN?.startsWith('TEST-')&&env.MP_WEBHOOK_SECRET&&/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||''))});
+     checkout_available:!!(/^(?:TEST-|APP_USR-)/.test(env.MP_TEST_ACCESS_TOKEN||'')&&env.MP_WEBHOOK_SECRET&&/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||''))});
    }
    if(!store) store=new SupabaseStore(env,fetcher);
    if(path==='/api/whatsapp') {
@@ -112,7 +112,7 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
    if(path==='/api/admin/billing-check'&&req.method==='GET') {
     if(!await store.operator(actor))return reply(res,403,{error:'No tienes acceso al panel.'});
     return reply(res,200,{
-     test_token:!!env.MP_TEST_ACCESS_TOKEN?.startsWith('TEST-'),
+     test_token:await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher}).catch(()=>false),
      token_present:!!env.MP_TEST_ACCESS_TOKEN,
      token_has_whitespace:typeof env.MP_TEST_ACCESS_TOKEN==='string'&&env.MP_TEST_ACCESS_TOKEN.trim()!==env.MP_TEST_ACCESS_TOKEN,
      token_has_wrapping_quotes:typeof env.MP_TEST_ACCESS_TOKEN==='string'&&/^["']|["']$/.test(env.MP_TEST_ACCESS_TOKEN),
