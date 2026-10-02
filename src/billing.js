@@ -2,6 +2,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 
 const mpBase='https://api.mercadopago.com';
 const testToken=token=>typeof token==='string'&&/^(?:TEST-|APP_USR-)/.test(token);
+export const testBuyerId=env=>/^\d{5,20}$/.test(env.MP_TEST_BUYER_USER_ID||'')?env.MP_TEST_BUYER_USER_ID:null;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function commercialConfig(env=process.env){
  const trialDays=Number(env.VENDIXA_TRIAL_DAYS||7),price=Number(env.VENDIXA_PLAN_PRICE_MXN||199);
@@ -39,13 +40,27 @@ export async function verifyMpTestSeller({token,fetcher=fetch}){
  const seller=await response.json();
  return Array.isArray(seller.tags)&&seller.tags.includes('test_user');
 }
+export async function resolveMpTestBuyer({userId,token,fetcher=fetch}){
+ if(!/^\d{5,20}$/.test(userId||'')||!testToken(token))return null;
+ const response=await fetcher(`https://api.mercadolibre.com/users/${userId}`,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(12000)});
+ if(!response.ok)return null;
+ const buyer=await response.json();
+ // Mercado Pago no expone el correo ni las etiquetas de una cuenta Comprador
+ // cuando se consulta con el token de prueba del Vendedor. El ID se obtiene
+ // del panel Cuentas de prueba y el correo sandbox documentado es fijo.
+ if(String(buyer.id)!==userId)return null;
+ return 'test@testuser.com';
+}
 export async function createCheckout({store,actor,business,email,env=process.env,fetcher=fetch}){
  const config=commercialConfig(env);
  if(!env.MP_TEST_ACCESS_TOKEN||!env.MP_WEBHOOK_SECRET||!/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||''))throw Object.assign(new Error('Checkout unavailable'),{status:503});
+ if(!uuid.test(env.MP_TEST_ALLOWED_BUSINESS_ID||'')||business!==env.MP_TEST_ALLOWED_BUSINESS_ID||!testBuyerId(env))throw Object.assign(new Error('Test checkout unavailable for this business'),{status:503});
  if(!await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher}))throw Object.assign(new Error('Test seller verification failed'),{status:503});
+ const buyerEmail=await resolveMpTestBuyer({userId:testBuyerId(env),token:env.MP_TEST_ACCESS_TOKEN,fetcher});
+ if(!buyerEmail)throw Object.assign(new Error('Test buyer verification failed'),{status:503});
  const attempt=await store.createCheckoutAttempt(actor,business);
  if(attempt.url)return {url:attempt.url,plan:config.plan,price_cents:config.priceCents,currency:'MXN'};
- const response=await mpRequest('/preapproval',{token:env.MP_TEST_ACCESS_TOKEN,method:'POST',fetcher,body:{reason:'Vendixa mensual',external_reference:attempt.id,payer_email:email,
+ const response=await mpRequest('/preapproval',{token:env.MP_TEST_ACCESS_TOKEN,method:'POST',fetcher,body:{reason:'Vendixa mensual',external_reference:attempt.id,payer_email:buyerEmail,
   auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:config.priceCents/100,currency_id:'MXN'},
   back_url:env.VENDIXA_PUBLIC_URL,status:'pending'}});
  if(!response.id||!/^https:\/\/(?:www\.)?mercadopago\.com\.mx\//.test(response.init_point||''))throw Object.assign(new Error('Invalid checkout response'),{status:503});

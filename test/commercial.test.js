@@ -4,7 +4,7 @@ import {createHmac,randomUUID} from 'node:crypto';
 import {createLocalStore,DEMO_USER as operator,DEMO_BUSINESS as existing} from '../scripts/local-store.js';
 import {handleMessage} from '../src/service.js';
 import {base} from '../src/interpret.js';
-import {commercialConfig,createCheckout,handleMpWebhook,verifyMpSignature,verifyMpTestSeller} from '../src/billing.js';
+import {commercialConfig,createCheckout,handleMpWebhook,verifyMpSignature,verifyMpTestSeller,resolveMpTestBuyer} from '../src/billing.js';
 import {createServer} from 'node:http';
 import {createHandler} from '../api/index.js';
 let store,user,business;
@@ -64,9 +64,9 @@ test('manual cash activation, transfer renewal, courtesy, isolation and reactiva
 });
 
 test('verified test checkout, approved webhook, duplicate and renewal are atomic',async()=>{
- const env={MP_TEST_ACCESS_TOKEN:'TEST-local-only',MP_WEBHOOK_SECRET:'local-secret',VENDIXA_PUBLIC_URL:'https://whatsappcrm-ruddy.vercel.app/'};
+ const env={MP_TEST_ACCESS_TOKEN:'TEST-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
  let attemptId,subscriptionId='subscription-test-1';
- const checkoutFetcher=async(url,options)=>{assert.equal(url,'https://api.mercadopago.com/preapproval');assert.match(options.headers.Authorization,/TEST-/);const body=JSON.parse(options.body);attemptId=body.external_reference;assert.equal(body.auto_recurring.transaction_amount,199);return {ok:true,json:async()=>({id:subscriptionId,init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=x'})};};
+ const checkoutFetcher=async(url,options)=>{if(url==='https://api.mercadolibre.com/users/123456789')return {ok:true,json:async()=>({id:123456789})};assert.equal(url,'https://api.mercadopago.com/preapproval');assert.match(options.headers.Authorization,/TEST-/);const body=JSON.parse(options.body);attemptId=body.external_reference;assert.equal(body.auto_recurring.transaction_amount,199);assert.equal(body.payer_email,'test@testuser.com');return {ok:true,json:async()=>({id:subscriptionId,init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=x'})};};
  const checkout=await createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:checkoutFetcher});
  assert.match(checkout.url,/mercadopago/);assert.equal((await store.access(user,business)).status,'trialing');
  const subscription={id:subscriptionId,external_reference:attemptId,status:'authorized',collector_id:123,auto_recurring:{currency_id:'MXN',transaction_amount:199}};
@@ -82,16 +82,20 @@ test('verified test checkout, approved webhook, duplicate and renewal are atomic
 });
 
 test('APP_USR checkout requires provider-confirmed test seller before any write',async()=>{
- const env={MP_TEST_ACCESS_TOKEN:'APP_USR-local-only',MP_WEBHOOK_SECRET:'local-secret',VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
+ const env={MP_TEST_ACCESS_TOKEN:'APP_USR-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
+ await assert.rejects(createCheckout({store,actor:user,business:randomUUID(),email:'new@example.test',env,fetcher:async()=>{throw Error('Provider must not be called');}}),e=>e.status===503);
+ await assert.rejects(createCheckout({store,actor:user,business,email:'new@example.test',env:{...env,MP_TEST_BUYER_USER_ID:'invalid'},fetcher:async()=>{throw Error('Provider must not be called');}}),e=>e.status===503);
  let calls=0;
  const productionFetcher=async url=>{calls++;assert.equal(url,'https://api.mercadolibre.com/users/me');return {ok:true,json:async()=>({tags:['normal']})};};
  assert.equal(await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher:productionFetcher}),false);
  await assert.rejects(createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:productionFetcher}),e=>e.status===503);
  assert.equal(calls,2);
+ assert.equal(await resolveMpTestBuyer({userId:'123456789',token:env.MP_TEST_ACCESS_TOKEN,fetcher:async()=>({ok:true,json:async()=>({id:987654321})})}),null);
  assert.equal((await store.db.query('select count(*)::int as n from checkout_attempts where business_id=$1',[business])).rows[0].n,0);
  const testFetcher=async(url,options)=>{
   if(url==='https://api.mercadolibre.com/users/me')return {ok:true,json:async()=>({tags:['normal','test_user']})};
-  assert.equal(url,'https://api.mercadopago.com/preapproval');assert.equal(options.headers.Authorization,`Bearer ${env.MP_TEST_ACCESS_TOKEN}`);
+  if(url==='https://api.mercadolibre.com/users/123456789')return {ok:true,json:async()=>({id:123456789})};
+  assert.equal(url,'https://api.mercadopago.com/preapproval');assert.equal(options.headers.Authorization,`Bearer ${env.MP_TEST_ACCESS_TOKEN}`);assert.equal(JSON.parse(options.body).payer_email,'test@testuser.com');
   return {ok:true,json:async()=>({id:'sub-test',init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=sub-test'})};
  };
  const checkout=await createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:testFetcher});
@@ -150,7 +154,7 @@ test('HTTP access and admin action isolate customer from operator capabilities',
  });
  await store.db.query('insert into pilot_operators(user_id) values($1)',[operator]);
  await server(createHandler({store,demoUser:operator,env:{}}),async root=>{
-  const check=await fetch(`${root}/api/admin/billing-check`);assert.equal(check.status,200);assert.deepEqual(await check.json(),{test_token:false,token_present:false,token_has_whitespace:false,token_has_wrapping_quotes:false,webhook_secret:false,public_url:false});
+  const check=await fetch(`${root}/api/admin/billing-check`);assert.equal(check.status,200);assert.deepEqual(await check.json(),{test_token:false,token_present:false,token_has_whitespace:false,token_has_wrapping_quotes:false,test_buyer:false,test_business:false,webhook_secret:false,public_url:false});
   const result=await fetch(`${root}/api/admin/subscriptions`);assert.equal(result.status,200);assert.ok((await result.json()).businesses.some(x=>x.id===business));
   const activation=await fetch(`${root}/api/admin/subscription-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({businessId:business,action:'activate',source:'manual_cash',endsAt:new Date(Date.now()+30*86400000).toISOString()})});
   assert.equal(activation.status,200);assert.equal((await activation.json()).status,'active');

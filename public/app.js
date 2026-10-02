@@ -34,9 +34,9 @@ document.querySelectorAll('[data-auth]').forEach(link=>link.addEventListener('cl
 $('back-home').addEventListener('click',home);
 async function session() {
  try {
-  commercialPlan=await api('plan');
   const data=await api('session');businesses=data.businesses;$('business').replaceChildren();
-  businesses.forEach(b=>{const o=document.createElement('option');o.value=b.id;o.textContent=b.name;$('business').append(o);});if(pending&&businesses.some(b=>b.id===pending.businessId))$('business').value=pending.businessId;timezone();
+  businesses.forEach(b=>{const o=document.createElement('option');o.value=b.id;o.textContent=b.name;$('business').append(o);});if(pending&&businesses.some(b=>b.id===pending.businessId))$('business').value=pending.businessId;
+  commercialPlan=await api(`plan?businessId=${encodeURIComponent($('business').value)}`);timezone();
   $('landing').hidden=true;$('login').hidden=true;$('signup').hidden=true;$('account').hidden=!!businesses.length;$('onboarding').hidden=!!businesses.length;$('workspace').hidden=!businesses.length;$('admin-link').hidden=!data.operator;$('mobile-admin-link').hidden=!data.operator;closeMobileMenu();
   $('notice').textContent=!businesses.length?'Agrega tu negocio para empezar.':'';window.scrollTo({top:0,behavior:'auto'});
   $('connection').textContent='Aquí puedes contarme lo que pasó en tu negocio';
@@ -57,7 +57,7 @@ $('compose').addEventListener('submit',async e=>{e.preventDefault();if(pending||
 $('retry').addEventListener('click',send);
 $('text').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('compose').requestSubmit();}});
 document.querySelectorAll('[data-example]').forEach(b=>b.addEventListener('click',()=>{if(!pending&&!busy){$('text').value=b.dataset.example;$('text').focus();}}));
-$('business').addEventListener('change',()=>{$('messages').replaceChildren();bubble('Cambiaste de negocio. Los siguientes mensajes se guardarán aquí.');timezone();clearAudio();closeMobileMenu();});
+$('business').addEventListener('change',async()=>{$('messages').replaceChildren();bubble('Cambiaste de negocio. Los siguientes mensajes se guardarán aquí.');commercialPlan=await api(`plan?businessId=${encodeURIComponent($('business').value)}`);timezone();clearAudio();closeMobileMenu();});
 $('checkout').addEventListener('click',async()=>{const button=$('checkout');button.disabled=true;try{const result=await api('checkout',{businessId:$('business').value});window.location.assign(result.url);}catch(error){bubble(error.message,'error');button.disabled=false;}});
 async function logout(){closeMobileMenu();await api('logout',{});pending=null;location.reload();}
 $('logout').addEventListener('click',logout);
