@@ -16,7 +16,10 @@ function renderCommercial(){
 }
 async function load(){
  try{
-  const [access,usage]=await Promise.all([fetch('/api/admin/subscriptions'),fetch('/api/admin/pilots')]);
+  const [access,usage,billing]=await Promise.all([fetch('/api/admin/subscriptions'),fetch('/api/admin/pilots'),fetch('/api/admin/billing-check')]);
+  const billingStatus=document.getElementById('billing-status');
+  if(billing.ok){const checks=await billing.json();billingStatus.textContent=`Token de prueba: ${checks.test_token?'Listo':'Pendiente'} · Firma del webhook: ${checks.webhook_secret?'Lista':'Pendiente'} · Dirección pública: ${checks.public_url?'Lista':'Pendiente'}.`;}
+  else billingStatus.textContent='No pude comprobar la configuración de pagos.';
   const accessData=await access.json(),usageData=await usage.json();
   if(!access.ok||!usage.ok)throw Error(accessData.error||usageData.error||'No pude cargar el panel.');
   subscriptions=accessData.businesses;renderCommercial();
