@@ -113,6 +113,9 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
     if(!await store.operator(actor))return reply(res,403,{error:'No tienes acceso al panel.'});
     return reply(res,200,{
      test_token:!!env.MP_TEST_ACCESS_TOKEN?.startsWith('TEST-'),
+     token_present:!!env.MP_TEST_ACCESS_TOKEN,
+     token_has_whitespace:typeof env.MP_TEST_ACCESS_TOKEN==='string'&&env.MP_TEST_ACCESS_TOKEN.trim()!==env.MP_TEST_ACCESS_TOKEN,
+     token_has_wrapping_quotes:typeof env.MP_TEST_ACCESS_TOKEN==='string'&&/^["']|["']$/.test(env.MP_TEST_ACCESS_TOKEN),
      webhook_secret:!!env.MP_WEBHOOK_SECRET,
      public_url:/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||'')
     });

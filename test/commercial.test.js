@@ -133,7 +133,7 @@ test('HTTP access and admin action isolate customer from operator capabilities',
  });
  await store.db.query('insert into pilot_operators(user_id) values($1)',[operator]);
  await server(createHandler({store,demoUser:operator,env:{}}),async root=>{
-  const check=await fetch(`${root}/api/admin/billing-check`);assert.equal(check.status,200);assert.deepEqual(await check.json(),{test_token:false,webhook_secret:false,public_url:false});
+  const check=await fetch(`${root}/api/admin/billing-check`);assert.equal(check.status,200);assert.deepEqual(await check.json(),{test_token:false,token_present:false,token_has_whitespace:false,token_has_wrapping_quotes:false,webhook_secret:false,public_url:false});
   const result=await fetch(`${root}/api/admin/subscriptions`);assert.equal(result.status,200);assert.ok((await result.json()).businesses.some(x=>x.id===business));
   const activation=await fetch(`${root}/api/admin/subscription-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({businessId:business,action:'activate',source:'manual_cash',endsAt:new Date(Date.now()+30*86400000).toISOString()})});
   assert.equal(activation.status,200);assert.equal((await activation.json()).status,'active');
