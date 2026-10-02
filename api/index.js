@@ -109,6 +109,14 @@ export function createHandler({store,interpreter=interpret,transcriber=transcrib
     if(!await store.membership(actor,business))return reply(res,403,{error:'No tienes acceso a ese negocio.'});
     return reply(res,200,await store.access(actor,business));
    }
+   if(path==='/api/admin/billing-check'&&req.method==='GET') {
+    if(!await store.operator(actor))return reply(res,403,{error:'No tienes acceso al panel.'});
+    return reply(res,200,{
+     test_token:!!env.MP_TEST_ACCESS_TOKEN?.startsWith('TEST-'),
+     webhook_secret:!!env.MP_WEBHOOK_SECRET,
+     public_url:/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||'')
+    });
+   }
    if(path==='/api/checkout'&&req.method==='POST') {
     const input=JSON.parse((await readBody(req,8192)).toString());
     if(!uuid.test(input.businessId||'')||!authUser.email)return reply(res,400,{error:'Negocio inválido.'});
