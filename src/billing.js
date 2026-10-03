@@ -96,7 +96,9 @@ export async function handleMpWebhook({store,query,headers,body,env=process.env,
  }
  if(String(resource.id)!==String(dataId)||!providerSubscription)return {ignored:true};
  const subscription=type==='subscription_preapproval'?resource:await mpRequest(`/preapproval/${encodeURIComponent(providerSubscription)}`,{token:env.MP_TEST_ACCESS_TOKEN,fetcher});
- if(resource.live_mode===true||subscription.live_mode===true)return {ignored:true};
+ // Mercado Pago reports live_mode=true for payments made between its generated
+ // test accounts. Test isolation is established above by verifying the seller
+ // account with /users/me, not by this inconsistent resource flag.
  if(String(subscription.id)!==String(providerSubscription)||!uuid.test(String(subscription.external_reference||'')))return {ignored:true};
  if(topic!=='subscription'&&subscription.status!=='authorized')return {ignored:true};
  const attempt=await store.checkoutAttempt(subscription.external_reference);
