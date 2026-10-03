@@ -64,9 +64,9 @@ test('manual cash activation, transfer renewal, courtesy, isolation and reactiva
 });
 
 test('verified test checkout, approved webhook, duplicate and renewal are atomic',async()=>{
- const env={MP_TEST_ACCESS_TOKEN:'TEST-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
+ const env={MP_TEST_ACCESS_TOKEN:'TEST-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_BUYER_EMAIL:'test_user_123@testuser.com',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
  let attemptId,subscriptionId='subscription-test-1';
- const checkoutFetcher=async(url,options)=>{if(url==='https://api.mercadolibre.com/users/123456789')return {ok:true,json:async()=>({id:123456789})};assert.equal(url,'https://api.mercadopago.com/preapproval');assert.match(options.headers.Authorization,/TEST-/);const body=JSON.parse(options.body);attemptId=body.external_reference;assert.equal(body.auto_recurring.transaction_amount,199);assert.equal(body.payer_email,'test@testuser.com');return {ok:true,json:async()=>({id:subscriptionId,init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=x'})};};
+ const checkoutFetcher=async(url,options)=>{if(url==='https://api.mercadolibre.com/users/123456789')return {ok:true,json:async()=>({id:123456789})};assert.equal(url,'https://api.mercadopago.com/preapproval');assert.match(options.headers.Authorization,/TEST-/);const body=JSON.parse(options.body);attemptId=body.external_reference;assert.equal(body.auto_recurring.transaction_amount,199);assert.equal(body.payer_email,'test_user_123@testuser.com');return {ok:true,json:async()=>({id:subscriptionId,init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=x'})};};
  const checkout=await createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:checkoutFetcher});
  assert.match(checkout.url,/mercadopago/);assert.equal((await store.access(user,business)).status,'trialing');
  const subscription={id:subscriptionId,external_reference:attemptId,status:'authorized',collector_id:123,auto_recurring:{currency_id:'MXN',transaction_amount:199}};
@@ -82,7 +82,7 @@ test('verified test checkout, approved webhook, duplicate and renewal are atomic
 });
 
 test('APP_USR checkout requires provider-confirmed test seller before any write',async()=>{
- const env={MP_TEST_ACCESS_TOKEN:'APP_USR-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
+ const env={MP_TEST_ACCESS_TOKEN:'APP_USR-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_BUYER_EMAIL:'test_user_123@testuser.com',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
  await assert.rejects(createCheckout({store,actor:user,business:randomUUID(),email:'new@example.test',env,fetcher:async()=>{throw Error('Provider must not be called');}}),e=>e.status===503);
  await assert.rejects(createCheckout({store,actor:user,business,email:'new@example.test',env:{...env,MP_TEST_BUYER_USER_ID:'invalid'},fetcher:async()=>{throw Error('Provider must not be called');}}),e=>e.status===503);
  let calls=0;
@@ -90,12 +90,12 @@ test('APP_USR checkout requires provider-confirmed test seller before any write'
  assert.equal(await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher:productionFetcher}),false);
  await assert.rejects(createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:productionFetcher}),e=>e.status===503);
  assert.equal(calls,2);
- assert.equal(await resolveMpTestBuyer({userId:'123456789',token:env.MP_TEST_ACCESS_TOKEN,fetcher:async()=>({ok:true,json:async()=>({id:987654321})})}),null);
+ assert.equal(await resolveMpTestBuyer({userId:'123456789',email:env.MP_TEST_BUYER_EMAIL,token:env.MP_TEST_ACCESS_TOKEN,fetcher:async()=>({ok:true,json:async()=>({id:987654321})})}),null);
  assert.equal((await store.db.query('select count(*)::int as n from checkout_attempts where business_id=$1',[business])).rows[0].n,0);
  const testFetcher=async(url,options)=>{
   if(url==='https://api.mercadolibre.com/users/me')return {ok:true,json:async()=>({tags:['normal','test_user']})};
   if(url==='https://api.mercadolibre.com/users/123456789')return {ok:true,json:async()=>({id:123456789})};
-  assert.equal(url,'https://api.mercadopago.com/preapproval');assert.equal(options.headers.Authorization,`Bearer ${env.MP_TEST_ACCESS_TOKEN}`);assert.equal(JSON.parse(options.body).payer_email,'test@testuser.com');
+  assert.equal(url,'https://api.mercadopago.com/preapproval');assert.equal(options.headers.Authorization,`Bearer ${env.MP_TEST_ACCESS_TOKEN}`);assert.equal(JSON.parse(options.body).payer_email,'test_user_123@testuser.com');
   return {ok:true,json:async()=>({id:'sub-test',init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=sub-test'})};
  };
  const checkout=await createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:testFetcher});

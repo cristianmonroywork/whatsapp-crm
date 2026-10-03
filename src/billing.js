@@ -3,6 +3,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 const mpBase='https://api.mercadopago.com';
 const testToken=token=>typeof token==='string'&&/^(?:TEST-|APP_USR-)/.test(token);
 export const testBuyerId=env=>/^\d{5,20}$/.test(env.MP_TEST_BUYER_USER_ID||'')?env.MP_TEST_BUYER_USER_ID:null;
+export const testBuyerEmail=env=>/^[a-z0-9._+-]{3,120}@testuser\.com$/i.test(env.MP_TEST_BUYER_EMAIL||'')?env.MP_TEST_BUYER_EMAIL:null;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function commercialConfig(env=process.env){
  const trialDays=Number(env.VENDIXA_TRIAL_DAYS||7),price=Number(env.VENDIXA_PLAN_PRICE_MXN||199);
@@ -40,23 +41,23 @@ export async function verifyMpTestSeller({token,fetcher=fetch}){
  const seller=await response.json();
  return Array.isArray(seller.tags)&&seller.tags.includes('test_user');
 }
-export async function resolveMpTestBuyer({userId,token,fetcher=fetch}){
- if(!/^\d{5,20}$/.test(userId||'')||!testToken(token))return null;
+export async function resolveMpTestBuyer({userId,email,token,fetcher=fetch}){
+ if(!/^\d{5,20}$/.test(userId||'')||!/^[a-z0-9._+-]{3,120}@testuser\.com$/i.test(email||'')||!testToken(token))return null;
  const response=await fetcher(`https://api.mercadolibre.com/users/${userId}`,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(12000)});
  if(!response.ok)return null;
  const buyer=await response.json();
- // Mercado Pago no expone el correo ni las etiquetas de una cuenta Comprador
- // cuando se consulta con el token de prueba del Vendedor. El ID se obtiene
- // del panel Cuentas de prueba y el correo sandbox documentado es fijo.
+ // Mercado Pago no expone el correo de una cuenta Comprador cuando se consulta
+ // con el token del Vendedor. Ambos valores se obtienen del panel/cuenta de
+ // prueba y permanecen exclusivamente como configuración server-side.
  if(String(buyer.id)!==userId)return null;
- return 'test@testuser.com';
+ return email;
 }
 export async function createCheckout({store,actor,business,email,env=process.env,fetcher=fetch}){
  const config=commercialConfig(env);
  if(!env.MP_TEST_ACCESS_TOKEN||!env.MP_WEBHOOK_SECRET||!/^https:\/\//.test(env.VENDIXA_PUBLIC_URL||''))throw Object.assign(new Error('Checkout unavailable'),{status:503});
- if(!uuid.test(env.MP_TEST_ALLOWED_BUSINESS_ID||'')||business!==env.MP_TEST_ALLOWED_BUSINESS_ID||!testBuyerId(env))throw Object.assign(new Error('Test checkout unavailable for this business'),{status:503});
+ if(!uuid.test(env.MP_TEST_ALLOWED_BUSINESS_ID||'')||business!==env.MP_TEST_ALLOWED_BUSINESS_ID||!testBuyerId(env)||!testBuyerEmail(env))throw Object.assign(new Error('Test checkout unavailable for this business'),{status:503});
  if(!await verifyMpTestSeller({token:env.MP_TEST_ACCESS_TOKEN,fetcher}))throw Object.assign(new Error('Test seller verification failed'),{status:503});
- const buyerEmail=await resolveMpTestBuyer({userId:testBuyerId(env),token:env.MP_TEST_ACCESS_TOKEN,fetcher});
+ const buyerEmail=await resolveMpTestBuyer({userId:testBuyerId(env),email:testBuyerEmail(env),token:env.MP_TEST_ACCESS_TOKEN,fetcher});
  if(!buyerEmail)throw Object.assign(new Error('Test buyer verification failed'),{status:503});
  const attempt=await store.createCheckoutAttempt(actor,business);
  if(attempt.url)return {url:attempt.url,plan:config.plan,price_cents:config.priceCents,currency:'MXN'};
