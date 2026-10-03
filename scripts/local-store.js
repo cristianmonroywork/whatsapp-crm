@@ -32,6 +32,7 @@ export async function createLocalStore(path) {
  if(!unpriced.rows.length) await db.exec(await readFile(new URL('../supabase/migrations/007_unpriced_stock_sales.sql',import.meta.url),'utf8'));
  const commercial=await db.query("select to_regprocedure('public.create_business_trial(uuid,text,text,integer)') as name");
  if(!commercial.rows[0].name) await db.exec(await readFile(new URL('../supabase/migrations/008_commercial_access.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/009_active_entitlement.sql',import.meta.url),'utf8'));
  const store={
   db,
   async seed(user=DEMO_USER,business=DEMO_BUSINESS,name='Mi negocio de prueba',timezone='America/Mexico_City') {

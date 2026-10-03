@@ -72,10 +72,10 @@ test('verified test checkout, approved webhook, duplicate and renewal are atomic
  const subscription={id:subscriptionId,external_reference:attemptId,status:'authorized',collector_id:123,live_mode:true,auto_recurring:{currency_id:'MXN',transaction_amount:199}};
  const provider=async(url)=>{const path=new URL(url).pathname;if(path.startsWith('/preapproval/'))return {ok:true,json:async()=>subscription};if(path.startsWith('/v1/payments/')){const id=path.split('/').at(-1);return {ok:true,json:async()=>({id:Number(id),status:'approved',currency_id:'MXN',transaction_amount:199,live_mode:true,preapproval_id:subscriptionId,date_approved:new Date().toISOString()})};}throw Error('Unexpected provider URL');};
  const deliver=async id=>{const {signature,requestId}=signed(id);return handleMpWebhook({store,query:new URLSearchParams({'data.id':id,type:'payment'}),headers:{'x-signature':signature,'x-request-id':requestId},body:{data:{id},type:'payment',live_mode:false},env,fetcher:provider});};
- assert.equal((await deliver('5001')).duplicate,false);assert.equal((await store.access(user,business)).status,'active');
- const firstEnd=Date.parse((await store.access(user,business)).current_period_end);
+ assert.equal((await deliver('5001')).duplicate,false);const activated=await store.access(user,business);assert.equal(activated.status,'active');assert.equal(activated.can_write,true);
+ const firstEnd=Date.parse(activated.current_period_end);
  assert.equal((await deliver('5001')).duplicate,true);assert.equal(Date.parse((await store.access(user,business)).current_period_end),firstEnd);
- await deliver('5002');assert.ok(Date.parse((await store.access(user,business)).current_period_end)>firstEnd);
+ await deliver('5002');const renewedAccess=await store.access(user,business);assert.ok(Date.parse(renewedAccess.current_period_end)>firstEnd);assert.equal(renewedAccess.can_write,true);
  assert.equal((await store.db.query('select count(*)::int as n from commercial_payments where business_id=$1',[business])).rows[0].n,2);
  assert.equal((await store.db.query("select count(*)::int as n from commercial_audit where business_id=$1 and event_type='payment_approved'",[business])).rows[0].n,2);
  assert.equal((await store.db.query("select count(*)::int as n from commercial_audit where business_id=$1 and event_type in ('subscription_activated','subscription_renewed')",[business])).rows[0].n,2);
