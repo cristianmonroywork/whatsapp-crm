@@ -6,7 +6,7 @@ export const testBuyerId=env=>/^\d{5,20}$/.test(env.MP_TEST_BUYER_USER_ID||'')?e
 export const testBuyerEmail=env=>/^[a-z0-9._+-]{3,120}@testuser\.com$/i.test(env.MP_TEST_BUYER_EMAIL||'')?env.MP_TEST_BUYER_EMAIL:null;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function commercialConfig(env=process.env){
- const trialDays=Number(env.VENDIXA_TRIAL_DAYS||7),price=Number(env.VENDIXA_PLAN_PRICE_MXN||199);
+ const trialDays=Number(env.VENDIXA_TRIAL_DAYS||7),price=Number(env.VENDIXA_PLAN_PRICE_MXN||499);
  if(!Number.isInteger(trialDays)||trialDays<1||trialDays>30||!Number.isInteger(price)||price<1||price>100000) throw new Error('Invalid commercial plan configuration');
  return {plan:'vendixa_monthly',trialDays,priceCents:price*100,currency:'MXN',period:'month'};
 }

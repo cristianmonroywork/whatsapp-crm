@@ -25,7 +25,7 @@ test('onboarding starts one 7-day trial with owner and commercial audit',async()
  assert.equal((await store.db.query("select count(*)::int as n from commercial_audit where business_id=$1 and event_type='trial_started'",[business])).rows[0].n,1);
  assert.ok(new Date(a.current_period_end)>new Date(Date.now()+6*86400000));
  await assert.rejects(store.createBusinessTrial(user,'Segundo','America/Mexico_City',7),/already exists/);
- assert.equal(commercialConfig({}).priceCents,19900);
+ assert.equal(commercialConfig({}).priceCents,49900);
 });
 
 test('expired trial is read-only, preserves movements and rejects direct SQL writes',async()=>{
@@ -64,13 +64,13 @@ test('manual cash activation, transfer renewal, courtesy, isolation and reactiva
 });
 
 test('verified test checkout, approved webhook, duplicate and renewal are atomic',async()=>{
- const env={MP_TEST_ACCESS_TOKEN:'TEST-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_BUYER_EMAIL:'test_user_123@testuser.com',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/'};
+ const env={MP_TEST_ACCESS_TOKEN:'TEST-local-only',MP_WEBHOOK_SECRET:'local-secret',MP_TEST_BUYER_USER_ID:'123456789',MP_TEST_BUYER_EMAIL:'test_user_123@testuser.com',MP_TEST_ALLOWED_BUSINESS_ID:business,VENDIXA_PUBLIC_URL:'https://www.vendixa.app/',VENDIXA_PLAN_PRICE_MXN:'499'};
  let attemptId,subscriptionId='subscription-test-1';
- const checkoutFetcher=async(url,options)=>{if(url==='https://api.mercadolibre.com/users/123456789')return {ok:true,json:async()=>({id:123456789})};assert.equal(url,'https://api.mercadopago.com/preapproval');assert.match(options.headers.Authorization,/TEST-/);const body=JSON.parse(options.body);attemptId=body.external_reference;assert.equal(body.auto_recurring.transaction_amount,199);assert.equal(body.payer_email,'test_user_123@testuser.com');return {ok:true,json:async()=>({id:subscriptionId,init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=x'})};};
+ const checkoutFetcher=async(url,options)=>{if(url==='https://api.mercadolibre.com/users/123456789')return {ok:true,json:async()=>({id:123456789})};assert.equal(url,'https://api.mercadopago.com/preapproval');assert.match(options.headers.Authorization,/TEST-/);const body=JSON.parse(options.body);attemptId=body.external_reference;assert.equal(body.auto_recurring.transaction_amount,499);assert.equal(body.payer_email,'test_user_123@testuser.com');return {ok:true,json:async()=>({id:subscriptionId,init_point:'https://www.mercadopago.com.mx/subscriptions/checkout?preapproval_id=x'})};};
  const checkout=await createCheckout({store,actor:user,business,email:'new@example.test',env,fetcher:checkoutFetcher});
- assert.match(checkout.url,/mercadopago/);assert.equal((await store.access(user,business)).status,'trialing');
- const subscription={id:subscriptionId,external_reference:attemptId,status:'authorized',collector_id:123,live_mode:true,auto_recurring:{currency_id:'MXN',transaction_amount:199}};
- const provider=async(url)=>{const path=new URL(url).pathname;if(path.startsWith('/preapproval/'))return {ok:true,json:async()=>subscription};if(path.startsWith('/v1/payments/')){const id=path.split('/').at(-1);return {ok:true,json:async()=>({id:Number(id),status:'approved',currency_id:'MXN',transaction_amount:199,live_mode:true,preapproval_id:subscriptionId,date_approved:new Date().toISOString()})};}throw Error('Unexpected provider URL');};
+ assert.match(checkout.url,/mercadopago/);assert.equal(checkout.price_cents,49900);assert.equal((await store.access(user,business)).status,'trialing');
+ const subscription={id:subscriptionId,external_reference:attemptId,status:'authorized',collector_id:123,live_mode:true,auto_recurring:{currency_id:'MXN',transaction_amount:499}};
+ const provider=async(url)=>{const path=new URL(url).pathname;if(path.startsWith('/preapproval/'))return {ok:true,json:async()=>subscription};if(path.startsWith('/v1/payments/')){const id=path.split('/').at(-1);return {ok:true,json:async()=>({id:Number(id),status:'approved',currency_id:'MXN',transaction_amount:499,live_mode:true,preapproval_id:subscriptionId,date_approved:new Date().toISOString()})};}throw Error('Unexpected provider URL');};
  const deliver=async id=>{const {signature,requestId}=signed(id);return handleMpWebhook({store,query:new URLSearchParams({'data.id':id,type:'payment'}),headers:{'x-signature':signature,'x-request-id':requestId},body:{data:{id},type:'payment',live_mode:false},env,fetcher:provider});};
  assert.equal((await deliver('5001')).duplicate,false);const activated=await store.access(user,business);assert.equal(activated.status,'active');assert.equal(activated.can_write,true);
  const firstEnd=Date.parse(activated.current_period_end);
