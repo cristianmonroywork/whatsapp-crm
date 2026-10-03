@@ -69,3 +69,4 @@ h1 em,h2 em{color:var(--brand-primary-text)}
 .composer{border:1px solid var(--border)}
 .composer:focus-within{outline:none;border-color:var(--brand-primary);box-shadow:0 0 0 3px var(--field-focus-ring)}
 .login input:focus,#create-business input:focus,#create-business select:focus,.business-picker select:focus,.commercial-form input:focus,.commercial-form select:focus{outline:none;border-color:var(--brand-primary);box-shadow:0 0 0 3px var(--field-focus-ring)}
+.composer textarea:focus,.composer textarea:focus-visible{outline:none;border:0;box-shadow:none}
